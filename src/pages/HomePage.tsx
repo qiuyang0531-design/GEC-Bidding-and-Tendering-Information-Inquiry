@@ -21,6 +21,8 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  // 记录每个网址的查询状态
+  const [urlStatuses, setUrlStatuses] = useState<Record<string, { status: 'success' | 'error' | 'idle'; message?: string }>>({});
 
   const adminBadge: any = profile?.role === 'admin' ? (
     <span className="ml-2 text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
@@ -35,6 +37,7 @@ export default function HomePage() {
     setLoading(true);
     setError('');
     setSuccess('');
+    setUrlStatuses({}); // 重置状态
 
     try {
       // 获取用户的所有URLs
@@ -49,16 +52,28 @@ export default function HomePage() {
       // 对每个URL执行抓取
       let successCount = 0;
       let failCount = 0;
+      const newStatuses: Record<string, { status: 'success' | 'error'; message?: string }> = {};
 
       for (const url of urls) {
         try {
           await scrapeUrlData(url.id, url.url);
           successCount++;
-        } catch (err) {
+          newStatuses[url.id] = { status: 'success', message: '查询成功' };
+        } catch (err: any) {
           console.error(`抓取 ${url.url} 失败:`, err);
           failCount++;
+          // 提取错误信息
+          let errorMessage = '查询失败';
+          if (err.message) {
+            errorMessage = err.message;
+          } else if (err.context) {
+            errorMessage = `${err.context}: ${err.name || '未知错误'}`;
+          }
+          newStatuses[url.id] = { status: 'error', message: errorMessage };
         }
       }
+
+      setUrlStatuses(newStatuses);
 
       if (successCount > 0) {
         setSuccess(`成功查询 ${successCount} 个网址的数据`);
@@ -66,7 +81,7 @@ export default function HomePage() {
       }
 
       if (failCount > 0) {
-        setError(`${failCount} 个网址查询失败，请检查网址是否正确`);
+        setError(`${failCount} 个网址查询失败，请查看网址列表中的错误提示`);
       }
     } catch (err) {
       console.error('查询失败:', err);
@@ -103,7 +118,10 @@ export default function HomePage() {
         <div className="grid gap-6 xl:grid-cols-3">
           {/* 左侧：网址管理 */}
           <div className="xl:col-span-1">
-            <UrlManager onUrlsChange={() => setRefreshTrigger(prev => prev + 1)} />
+            <UrlManager 
+              onUrlsChange={() => setRefreshTrigger(prev => prev + 1)} 
+              urlStatuses={urlStatuses}
+            />
           </div>
 
           {/* 右侧：查询和数据展示 */}

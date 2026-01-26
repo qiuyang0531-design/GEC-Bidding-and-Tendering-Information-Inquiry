@@ -5,16 +5,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Plus, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { addUrl, deleteUrl, getUserUrls } from '@/db/api';
 import type { Url } from '@/types/types.ts';
 import { useEffect } from 'react';
+import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface UrlManagerProps {
   onUrlsChange?: () => void;
+  urlStatuses?: Record<string, { status: 'success' | 'error' | 'idle'; message?: string }>;
 }
 
-export default function UrlManager({ onUrlsChange }: UrlManagerProps) {
+export default function UrlManager({ onUrlsChange, urlStatuses = {} }: UrlManagerProps) {
   const { user } = useAuth();
   const [urls, setUrls] = useState<Url[]>([]);
   const [newUrl, setNewUrl] = useState('');
@@ -158,27 +166,72 @@ export default function UrlManager({ onUrlsChange }: UrlManagerProps) {
           <div className="space-y-2 pt-4 border-t">
             <h3 className="font-semibold text-sm">已添加的网址</h3>
             <div className="space-y-2">
-              {urls.map((url) => (
-                <div
-                  key={url.id}
-                  className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                >
-                  <div className="flex-1 min-w-0">
-                    {url.name && (
-                      <p className="font-medium text-sm truncate">{url.name}</p>
+              {urls.map((url) => {
+                const status = urlStatuses[url.id];
+                return (
+                  <div
+                    key={url.id}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg transition-colors",
+                      status?.status === 'error' 
+                        ? 'bg-destructive/10 border border-destructive/20' 
+                        : status?.status === 'success'
+                        ? 'bg-primary/10 border border-primary/20'
+                        : 'bg-muted'
                     )}
-                    <p className="text-xs text-muted-foreground truncate">{url.url}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDeleteUrl(url.id)}
-                    className="ml-2 shrink-0"
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {/* 状态图标 */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="shrink-0">
+                              {status?.status === 'success' && (
+                                <CheckCircle2 className="h-5 w-5 text-primary" />
+                              )}
+                              {status?.status === 'error' && (
+                                <XCircle className="h-5 w-5 text-destructive" />
+                              )}
+                              {!status && (
+                                <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>
+                              {status?.status === 'success' && '查询成功'}
+                              {status?.status === 'error' && `查询失败: ${status.message || '未知错误'}`}
+                              {!status && '未查询'}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
+                      {/* 网址信息 */}
+                      <div className="flex-1 min-w-0">
+                        {url.name && (
+                          <p className="font-medium text-sm truncate">{url.name}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground truncate">{url.url}</p>
+                        {/* 错误信息 */}
+                        {status?.status === 'error' && status.message && (
+                          <p className="text-xs text-destructive mt-1">
+                            ⚠️ {status.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteUrl(url.id)}
+                      className="ml-2 shrink-0"
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
