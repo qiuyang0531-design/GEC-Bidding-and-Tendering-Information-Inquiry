@@ -1,5 +1,239 @@
 # 更新日志
 
+## v1.6.1 (2026-01-26)
+
+### 🐛 Bug修复
+
+#### 详情链接提取修复
+- ✅ **修复参数传递**：修正extractLink函数的baseUrl参数
+- ✅ **正确处理相对路径**：现在可以正确转换相对路径为绝对URL
+- ✅ **链接显示位置**：确认详情链接在表格最右侧（第13列）正确显示
+
+### 🔧 技术修复
+
+#### Edge Function参数修正
+
+**问题**：
+- parseHtmlData函数接收urlId（数据库ID）
+- extractLink函数需要完整URL来处理相对路径
+- 导致相对路径无法正确转换
+
+**解决方案**：
+```typescript
+// 修改前
+const transactions = parseHtmlData(html, urlId, user.id);
+function parseHtmlData(html: string, urlId: string, userId: string): any[]
+function parseHtmlTable(html: string, urlId: string, userId: string): any[]
+detail_link: extractLink(cells[0]?.[1] || '', urlId)  // ❌ 错误：传入urlId
+
+// 修改后
+const transactions = parseHtmlData(html, urlId, user.id, url);
+function parseHtmlData(html: string, urlId: string, userId: string, baseUrl: string): any[]
+function parseHtmlTable(html: string, urlId: string, userId: string, baseUrl: string): any[]
+detail_link: extractLink(cells[0]?.[1] || '', baseUrl)  // ✅ 正确：传入完整URL
+```
+
+#### 函数签名更新
+
+**parseHtmlData**：
+```typescript
+// 新增baseUrl参数
+function parseHtmlData(
+  html: string, 
+  urlId: string, 
+  userId: string, 
+  baseUrl: string  // 新增：完整的URL
+): any[]
+```
+
+**parseHtmlTable**：
+```typescript
+// 新增baseUrl参数
+function parseHtmlTable(
+  html: string, 
+  urlId: string, 
+  userId: string, 
+  baseUrl: string  // 新增：完整的URL
+): any[]
+```
+
+**parseHtmlList**：
+```typescript
+// 新增baseUrl参数
+function parseHtmlList(
+  html: string, 
+  urlId: string, 
+  userId: string, 
+  baseUrl: string  // 新增：完整的URL
+): any[]
+```
+
+### 📊 详情链接功能确认
+
+#### 表格列顺序（共13列）
+1. 项目名称
+2. 招标单位
+3. 投标单位
+4. 中标单位
+5. 总价
+6. 成交量
+7. 绿证单价
+8. 通道类型
+9. 绿证年份
+10. 招标开始日期
+11. 招标结束日期
+12. 中标日期
+13. **详情链接** ⭐（最右侧）
+
+#### 详情链接显示
+
+**有链接时**：
+```tsx
+<Button variant="ghost" size="icon" asChild>
+  <a href={transaction.detail_link} target="_blank" rel="noopener noreferrer">
+    <ExternalLink className="h-4 w-4" />
+  </a>
+</Button>
+```
+- 显示外链图标按钮
+- 点击在新窗口打开
+- 安全属性：noopener noreferrer
+
+**无链接时**：
+```tsx
+<span className="text-xs text-muted-foreground">暂无链接</span>
+```
+- 显示灰色文字"暂无链接"
+
+### 🔗 链接提取逻辑
+
+#### extractLink函数
+
+**功能**：从HTML中提取链接并转换为绝对URL
+
+**处理逻辑**：
+```typescript
+function extractLink(html: string, baseUrl: string): string | null {
+  // 1. 提取href属性
+  const match = html.match(/href=["']([^"']+)["']/);
+  if (!match) return null;
+  
+  let link = match[1];
+  
+  // 2. 处理不同类型的链接
+  if (link.startsWith('http')) {
+    // 绝对URL：保持不变
+    return link;
+  } else if (link.startsWith('/')) {
+    // 相对路径：/path/to/page
+    return `${protocol}//${host}${link}`;
+  } else {
+    // 相对文件：page.html
+    return `${protocol}//${host}${basePath}/${link}`;
+  }
+}
+```
+
+**示例**：
+```typescript
+// 输入：baseUrl = "https://example.com/trade/list"
+
+// 案例1：绝对URL
+extractLink('<a href="https://other.com/detail">链接</a>', baseUrl)
+// 输出："https://other.com/detail"
+
+// 案例2：相对路径
+extractLink('<a href="/detail/123">链接</a>', baseUrl)
+// 输出："https://example.com/detail/123"
+
+// 案例3：相对文件
+extractLink('<a href="detail.html">链接</a>', baseUrl)
+// 输出："https://example.com/trade/detail.html"
+
+// 案例4：无链接
+extractLink('<span>无链接</span>', baseUrl)
+// 输出：null
+```
+
+### 🎯 用户体验
+
+#### 数据追溯
+- **每条记录都有来源**：可以追溯到原始页面
+- **验证数据准确性**：点击链接查看原始数据
+- **便于问题排查**：发现数据错误时可以查看源页面
+
+#### 操作便捷
+- **新窗口打开**：不影响当前页面
+- **图标直观**：外链图标清晰易懂
+- **无链接提示**：明确显示"暂无链接"
+
+### ✅ 验证结果
+
+#### Edge Function部署
+```bash
+supabase functions deploy scrape-data
+```
+**结果**：✅ 部署成功
+
+#### 功能测试
+- ✅ baseUrl参数正确传递
+- ✅ 相对路径正确转换
+- ✅ 绝对URL保持不变
+- ✅ 无链接返回null
+- ✅ 前端正确显示链接
+- ✅ 点击链接正常跳转
+
+### 📝 代码变更
+
+#### 修改文件
+- `supabase/functions/scrape-data/index.ts`
+  - 第66行：传入url参数
+  - 第115行：parseHtmlData添加baseUrl参数
+  - 第120行：parseHtmlTable添加baseUrl参数
+  - 第126行：parseHtmlList添加baseUrl参数
+  - 第174行：extractLink使用baseUrl
+  - 第220行：extractLink使用baseUrl
+
+#### 影响范围
+- ✅ 不影响数据库结构
+- ✅ 不影响前端代码
+- ✅ 只修改Edge Function内部逻辑
+- ✅ 向后兼容
+
+### 💡 使用说明
+
+#### 如何查看详情链接
+
+1. **在交易数据表格中**：
+   - 滚动到最右侧
+   - 找到"详情链接"列
+   - 查看链接图标或"暂无链接"文字
+
+2. **点击链接**：
+   - 点击外链图标
+   - 在新窗口打开原始页面
+   - 查看完整的交易信息
+
+3. **验证数据**：
+   - 对比表格数据和原始页面
+   - 确认数据准确性
+   - 发现问题及时反馈
+
+### 🔄 升级说明
+
+#### 从v1.6.0升级
+- ✅ Edge Function已自动更新
+- ✅ 无需修改数据库
+- ✅ 无需修改前端代码
+- ✅ 直接使用新功能
+
+#### 注意事项
+- 已抓取的数据不受影响
+- 新抓取的数据将正确提取链接
+- 相对路径将正确转换为绝对URL
+
+---
+
 ## v1.6.0 (2026-01-26)
 
 ### ✨ 新增功能

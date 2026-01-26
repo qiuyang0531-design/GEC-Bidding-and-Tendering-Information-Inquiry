@@ -62,13 +62,9 @@ Deno.serve(async (req) => {
     const response = await fetch(url);
     const html = await response.text();
 
-    // 这里是一个简化的示例解析逻辑
-    // 实际应用中需要根据具体网站的HTML结构进行解析
-    // 可以使用正则表达式或HTML解析库来提取数据
-    
-    // 示例：提取一些模拟数据
-    // 在实际应用中，您需要根据目标网站的HTML结构来编写具体的解析逻辑
-    const transactions = parseHtmlData(html, urlId, user.id);
+    // 解析HTML数据
+    // 传入html、urlId、userId和完整的url（用于处理相对链接）
+    const transactions = parseHtmlData(html, urlId, user.id, url);
 
     // 如果有数据，插入到数据库
     if (transactions.length > 0) {
@@ -112,18 +108,18 @@ Deno.serve(async (req) => {
 
 // 解析HTML数据的函数
 // 这是一个示例实现，实际应用中需要根据目标网站的HTML结构进行定制
-function parseHtmlData(html: string, urlId: string, userId: string): any[] {
+function parseHtmlData(html: string, urlId: string, userId: string, baseUrl: string): any[] {
   const transactions: any[] = [];
 
   // 尝试不同的解析方法
   // 方法1：解析HTML表格
-  const tableTransactions = parseHtmlTable(html, urlId, userId);
+  const tableTransactions = parseHtmlTable(html, urlId, userId, baseUrl);
   if (tableTransactions.length > 0) {
     return tableTransactions;
   }
 
   // 方法2：解析列表结构
-  const listTransactions = parseHtmlList(html, urlId, userId);
+  const listTransactions = parseHtmlList(html, urlId, userId, baseUrl);
   if (listTransactions.length > 0) {
     return listTransactions;
   }
@@ -138,7 +134,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
 }
 
 // 方法1：解析HTML表格
-function parseHtmlTable(html: string, urlId: string, userId: string): any[] {
+function parseHtmlTable(html: string, urlId: string, userId: string, baseUrl: string): any[] {
   const transactions: any[] = [];
 
   try {
@@ -171,7 +167,7 @@ function parseHtmlTable(html: string, urlId: string, userId: string): any[] {
         total_price: extractPrice(cells[4]?.[1] || ''),
         quantity: extractNumber(cells[5]?.[1] || ''),
         unit_price: extractPrice(cells[6]?.[1] || ''),
-        detail_link: extractLink(cells[0]?.[1] || '', urlId),
+        detail_link: extractLink(cells[0]?.[1] || '', baseUrl),
         is_channel: parseChannelType(cells[7]?.[1] || ''),
         cert_year: extractYear(cells[8]?.[1] || ''),
         bid_start_date: parseDate(cells[9]?.[1] || ''),
@@ -192,7 +188,7 @@ function parseHtmlTable(html: string, urlId: string, userId: string): any[] {
 }
 
 // 方法2：解析列表结构
-function parseHtmlList(html: string, urlId: string, userId: string): any[] {
+function parseHtmlList(html: string, urlId: string, userId: string, baseUrl: string): any[] {
   const transactions: any[] = [];
 
   try {
@@ -221,7 +217,7 @@ function parseHtmlList(html: string, urlId: string, userId: string): any[] {
           total_price: extractPrice(extractByPattern(itemHtml, /总价[：:]\s*([^<\n]+)/) || ''),
           quantity: extractNumber(extractByPattern(itemHtml, /成交量[：:]\s*([^<\n]+)/) || ''),
           unit_price: extractPrice(extractByPattern(itemHtml, /单价[：:]\s*([^<\n]+)/) || ''),
-          detail_link: extractLink(itemHtml, urlId),
+          detail_link: extractLink(itemHtml, baseUrl),
           is_channel: parseChannelType(extractByPattern(itemHtml, /通道[：:]\s*([^<\n]+)/) || ''),
           cert_year: extractYear(extractByPattern(itemHtml, /年份[：:]\s*([^<\n]+)/) || ''),
           bid_start_date: parseDate(extractByPattern(itemHtml, /招标开始[：:]\s*([^<\n]+)/) || ''),
