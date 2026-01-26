@@ -29,6 +29,7 @@ export interface Transaction {
   bidder_unit?: string;
   winning_unit?: string;
   total_price?: number;
+  quantity?: number; // 成交量（绿证数量）
   unit_price?: number;
   detail_link?: string;
   is_channel?: boolean;

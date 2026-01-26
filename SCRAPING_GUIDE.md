@@ -45,6 +45,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
 | 投标单位 | bidder_unit | TEXT | ❌ | 参与投标的单位 |
 | 中标单位 | winning_unit | TEXT | ❌ | 最终中标的单位 |
 | 总价 | total_price | NUMERIC | ❌ | 交易总金额（元） |
+| 成交量 | quantity | NUMERIC | ❌ | 绿证数量（张） |
 | 绿证单价 | unit_price | NUMERIC | ❌ | 每张绿证的单价（元） |
 | 详情链接 | detail_link | TEXT | ❌ | 查看详情的URL |
 | 通道类型 | is_channel | BOOLEAN | ❌ | true=通道，false=非通道，null=未标注 |
@@ -364,13 +365,14 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
         bidder_unit: cleanText(cells[2][1]),  // 第3列：投标单位
         winning_unit: cleanText(cells[3][1]), // 第4列：中标单位
         total_price: extractPrice(cells[4][1]), // 第5列：总价
-        unit_price: extractPrice(cells[5][1]),  // 第6列：单价
+        quantity: parseFloat(cleanText(cells[5][1])) || null, // 第6列：成交量
+        unit_price: extractPrice(cells[6][1]),  // 第7列：单价
         detail_link: extractLink(cells[0][1], 'https://example.com'), // 从项目名称提取链接
-        is_channel: parseChannelType(cells[6][1]), // 第7列：通道类型（支持三种状态）
-        cert_year: extractYear(cells[7][1]), // 第8列：年份（支持单年份和多年份）
-        bid_start_date: parseDate(cells[8][1]), // 第9列：招标开始日期
-        bid_end_date: parseDate(cells[9][1]), // 第10列：招标结束日期
-        award_date: parseDate(cells[10][1]), // 第11列：中标日期
+        is_channel: parseChannelType(cells[7][1]), // 第8列：通道类型（支持三种状态）
+        cert_year: extractYear(cells[8][1]), // 第9列：年份（支持单年份和多年份）
+        bid_start_date: parseDate(cells[9][1]), // 第10列：招标开始日期
+        bid_end_date: parseDate(cells[10][1]), // 第11列：招标结束日期
+        award_date: parseDate(cells[11][1]), // 第12列：中标日期
       };
       
       // 4. 验证必填字段

@@ -49,6 +49,12 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
     return `¥${price.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // 格式化数量
+  const formatQuantity = (quantity?: number) => {
+    if (quantity === null || quantity === undefined) return '-';
+    return `${quantity.toLocaleString('zh-CN')}张`;
+  };
+
   // 格式化日期
   const formatDate = (date?: string) => {
     if (!date) return '-';
@@ -98,6 +104,7 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                   <TableHead>投标单位</TableHead>
                   <TableHead>中标单位</TableHead>
                   <TableHead className="text-right">总价</TableHead>
+                  <TableHead className="text-right">成交量</TableHead>
                   <TableHead className="text-right">绿证单价</TableHead>
                   <TableHead>通道类型</TableHead>
                   <TableHead>绿证年份</TableHead>
@@ -124,6 +131,9 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                     </TableCell>
                     <TableCell className="text-right">
                       {formatPrice(transaction.total_price)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatQuantity(transaction.quantity)}
                     </TableCell>
                     <TableCell className="text-right">
                       {formatPrice(transaction.unit_price)}

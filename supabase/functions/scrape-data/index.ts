@@ -124,18 +124,19 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 3. bidder_unit - 投标单位
   // 4. winning_unit - 中标单位
   // 5. total_price - 总价（数字）
-  // 6. unit_price - 绿证单价（数字，2025年约7元）
-  // 7. detail_link - 具体标的信息链接
-  // 8. is_channel - 通道类型（布尔值或null）
+  // 6. quantity - 成交量（数字，绿证数量）
+  // 7. unit_price - 绿证单价（数字，2025年约7元）
+  // 8. detail_link - 具体标的信息链接
+  // 9. is_channel - 通道类型（布尔值或null）
   //    - true: 通道
   //    - false: 非通道
   //    - null: 未标注（显示为"-"）
-  // 9. cert_year - 绿证年份（文本格式）
+  // 10. cert_year - 绿证年份（文本格式）
   //    - 单年份: "2025"
   //    - 多年份: "2024/2025" 或 "2024-2026"
-  // 10. bid_start_date - 招标开始日期（格式：YYYY-MM-DD）
-  // 11. bid_end_date - 招标结束日期（格式：YYYY-MM-DD）
-  // 12. award_date - 中标日期（格式：YYYY-MM-DD）
+  // 11. bid_start_date - 招标开始日期（格式：YYYY-MM-DD）
+  // 12. bid_end_date - 招标结束日期（格式：YYYY-MM-DD）
+  // 13. award_date - 中标日期（格式：YYYY-MM-DD）
   
   // 示例：查找表格行或列表项
   // const tableRowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
@@ -152,6 +153,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //     bidder_unit: extractField(rowHtml, 'bidder'),
   //     winning_unit: extractField(rowHtml, 'winning'),
   //     total_price: parseFloat(extractField(rowHtml, 'total_price')) || null,
+  //     quantity: parseFloat(extractField(rowHtml, 'quantity')) || null, // 成交量（绿证数量）
   //     unit_price: parseFloat(extractField(rowHtml, 'unit_price')) || null,
   //     detail_link: extractField(rowHtml, 'link'),
   //     is_channel: parseChannelType(extractField(rowHtml, 'channel')),
@@ -174,7 +176,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 返回示例数据（实际应用中应该返回解析后的真实数据）
   console.log('HTML长度:', html.length);
   console.log('注意：这是示例实现，需要根据实际网站HTML结构编写解析逻辑');
-  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、绿证单价、详情链接、通道类型、绿证年份、招标开始日期、招标结束日期、中标日期');
+  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、成交量、绿证单价、详情链接、通道类型、绿证年份、招标开始日期、招标结束日期、中标日期');
 
   return transactions;
 }
