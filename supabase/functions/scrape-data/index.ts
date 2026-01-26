@@ -115,68 +115,249 @@ Deno.serve(async (req) => {
 function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   const transactions: any[] = [];
 
-  // 示例：使用正则表达式提取数据
-  // 实际应用中需要根据目标网站的HTML结构编写具体的解析逻辑
-  
-  // 需要提取的字段：
-  // 1. project_name - 项目名称（必填）
-  // 2. bidding_unit - 招标单位
-  // 3. bidder_unit - 投标单位
-  // 4. winning_unit - 中标单位
-  // 5. total_price - 总价（数字）
-  // 6. quantity - 成交量（数字，绿证数量）
-  // 7. unit_price - 绿证单价（数字，2025年约7元）
-  // 8. detail_link - 具体标的信息链接
-  // 9. is_channel - 通道类型（布尔值或null）
-  //    - true: 通道
-  //    - false: 非通道
-  //    - null: 未标注（显示为"-"）
-  // 10. cert_year - 绿证年份（文本格式）
-  //    - 单年份: "2025"
-  //    - 多年份: "2024/2025" 或 "2024-2026"
-  // 11. bid_start_date - 招标开始日期（格式：YYYY-MM-DD）
-  // 12. bid_end_date - 招标结束日期（格式：YYYY-MM-DD）
-  // 13. award_date - 中标日期（格式：YYYY-MM-DD）
-  
-  // 示例：查找表格行或列表项
-  // const tableRowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
-  // const matches = html.matchAll(tableRowRegex);
-  
-  // for (const match of matches) {
-  //   const rowHtml = match[1];
-  //   // 从行中提取数据字段
-  //   const transaction = {
-  //     url_id: urlId,
-  //     user_id: userId,
-  //     project_name: extractField(rowHtml, 'project'),
-  //     bidding_unit: extractField(rowHtml, 'bidding'),
-  //     bidder_unit: extractField(rowHtml, 'bidder'),
-  //     winning_unit: extractField(rowHtml, 'winning'),
-  //     total_price: parseFloat(extractField(rowHtml, 'total_price')) || null,
-  //     quantity: parseFloat(extractField(rowHtml, 'quantity')) || null, // 成交量（绿证数量）
-  //     unit_price: parseFloat(extractField(rowHtml, 'unit_price')) || null,
-  //     detail_link: extractField(rowHtml, 'link'),
-  //     is_channel: parseChannelType(extractField(rowHtml, 'channel')),
-  //     cert_year: extractField(rowHtml, 'year') || null, // 文本格式，支持"2025"或"2024/2025"
-  //     bid_start_date: extractField(rowHtml, 'bid_start') || null, // 招标开始日期
-  //     bid_end_date: extractField(rowHtml, 'bid_end') || null, // 招标结束日期
-  //     award_date: extractField(rowHtml, 'award') || null, // 中标日期
-  //   };
-  //   transactions.push(transaction);
-  // }
-  
-  // 通道类型解析辅助函数
-  // function parseChannelType(text: string): boolean | null {
-  //   if (!text || text === '-' || text.trim() === '') return null;
-  //   if (text.includes('通道') && !text.includes('非')) return true;
-  //   if (text.includes('非通道')) return false;
-  //   return null;
-  // }
+  // 尝试不同的解析方法
+  // 方法1：解析HTML表格
+  const tableTransactions = parseHtmlTable(html, urlId, userId);
+  if (tableTransactions.length > 0) {
+    return tableTransactions;
+  }
 
-  // 返回示例数据（实际应用中应该返回解析后的真实数据）
+  // 方法2：解析列表结构
+  const listTransactions = parseHtmlList(html, urlId, userId);
+  if (listTransactions.length > 0) {
+    return listTransactions;
+  }
+
+  // 如果都失败，记录日志
+  console.log('未能从HTML中提取数据');
   console.log('HTML长度:', html.length);
-  console.log('注意：这是示例实现，需要根据实际网站HTML结构编写解析逻辑');
-  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、成交量、绿证单价、详情链接、通道类型、绿证年份、招标开始日期、招标结束日期、中标日期');
+  console.log('请根据实际网站HTML结构定制解析逻辑');
+  console.log('参考文档: SCRAPING_IMPLEMENTATION_GUIDE.md');
+
+  return transactions;
+}
+
+// 方法1：解析HTML表格
+function parseHtmlTable(html: string, urlId: string, userId: string): any[] {
+  const transactions: any[] = [];
+
+  try {
+    // 提取表格行（跳过表头）
+    const tableRowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
+    const rows = Array.from(html.matchAll(tableRowRegex));
+
+    // 至少需要2行（表头+数据）
+    if (rows.length < 2) return transactions;
+
+    // 从第二行开始处理（跳过表头）
+    for (let i = 1; i < rows.length; i++) {
+      const rowHtml = rows[i][1];
+
+      // 提取单元格
+      const cellRegex = /<td[^>]*>(.*?)<\/td>/gis;
+      const cells = Array.from(rowHtml.matchAll(cellRegex));
+
+      // 确保有足够的列
+      if (cells.length < 5) continue;
+
+      // 根据列的顺序提取数据（需要根据实际网站调整）
+      const transaction = {
+        url_id: urlId,
+        user_id: userId,
+        project_name: cleanText(cells[0]?.[1] || ''),
+        bidding_unit: cleanText(cells[1]?.[1] || ''),
+        bidder_unit: cleanText(cells[2]?.[1] || ''),
+        winning_unit: cleanText(cells[3]?.[1] || ''),
+        total_price: extractPrice(cells[4]?.[1] || ''),
+        quantity: extractNumber(cells[5]?.[1] || ''),
+        unit_price: extractPrice(cells[6]?.[1] || ''),
+        detail_link: extractLink(cells[0]?.[1] || '', urlId),
+        is_channel: parseChannelType(cells[7]?.[1] || ''),
+        cert_year: extractYear(cells[8]?.[1] || ''),
+        bid_start_date: parseDate(cells[9]?.[1] || ''),
+        bid_end_date: parseDate(cells[10]?.[1] || ''),
+        award_date: parseDate(cells[11]?.[1] || ''),
+      };
+
+      // 验证必填字段
+      if (transaction.project_name && transaction.project_name.length > 0) {
+        transactions.push(transaction);
+      }
+    }
+  } catch (error) {
+    console.error('表格解析失败:', error);
+  }
+
+  return transactions;
+}
+
+// 方法2：解析列表结构
+function parseHtmlList(html: string, urlId: string, userId: string): any[] {
+  const transactions: any[] = [];
+
+  try {
+    // 尝试查找常见的列表容器
+    const itemPatterns = [
+      /<div[^>]*class="[^"]*item[^"]*"[^>]*>(.*?)<\/div>/gis,
+      /<li[^>]*class="[^"]*transaction[^"]*"[^>]*>(.*?)<\/li>/gis,
+      /<article[^>]*>(.*?)<\/article>/gis,
+    ];
+
+    for (const pattern of itemPatterns) {
+      const items = Array.from(html.matchAll(pattern));
+
+      if (items.length === 0) continue;
+
+      for (const item of items) {
+        const itemHtml = item[1];
+
+        const transaction = {
+          url_id: urlId,
+          user_id: userId,
+          project_name: extractByPattern(itemHtml, /项目名称[：:]\s*([^<\n]+)/),
+          bidding_unit: extractByPattern(itemHtml, /招标单位[：:]\s*([^<\n]+)/),
+          bidder_unit: extractByPattern(itemHtml, /投标单位[：:]\s*([^<\n]+)/),
+          winning_unit: extractByPattern(itemHtml, /中标单位[：:]\s*([^<\n]+)/),
+          total_price: extractPrice(extractByPattern(itemHtml, /总价[：:]\s*([^<\n]+)/) || ''),
+          quantity: extractNumber(extractByPattern(itemHtml, /成交量[：:]\s*([^<\n]+)/) || ''),
+          unit_price: extractPrice(extractByPattern(itemHtml, /单价[：:]\s*([^<\n]+)/) || ''),
+          detail_link: extractLink(itemHtml, urlId),
+          is_channel: parseChannelType(extractByPattern(itemHtml, /通道[：:]\s*([^<\n]+)/) || ''),
+          cert_year: extractYear(extractByPattern(itemHtml, /年份[：:]\s*([^<\n]+)/) || ''),
+          bid_start_date: parseDate(extractByPattern(itemHtml, /招标开始[：:]\s*([^<\n]+)/) || ''),
+          bid_end_date: parseDate(extractByPattern(itemHtml, /招标结束[：:]\s*([^<\n]+)/) || ''),
+          award_date: parseDate(extractByPattern(itemHtml, /中标日期[：:]\s*([^<\n]+)/) || ''),
+        };
+
+        if (transaction.project_name && transaction.project_name.length > 0) {
+          transactions.push(transaction);
+        }
+      }
+
+      if (transactions.length > 0) break;
+    }
+  } catch (error) {
+    console.error('列表解析失败:', error);
+  }
+
+  return transactions;
+}
+
+// ========== 辅助函数 ==========
+
+// 清理文本（去除HTML标签和多余空格）
+function cleanText(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, '') // 去除HTML标签
+    .replace(/&nbsp;/g, ' ') // 替换&nbsp;
+    .replace(/&amp;/g, '&')  // 替换&amp;
+    .replace(/&lt;/g, '<')   // 替换&lt;
+    .replace(/&gt;/g, '>')   // 替换&gt;
+    .replace(/&quot;/g, '"') // 替换&quot;
+    .replace(/&#\d+;/g, '')  // 去除数字实体
+    .trim();
+}
+
+// 提取价格（去除货币符号和逗号）
+function extractPrice(html: string): number | null {
+  if (!html) return null;
+  const text = cleanText(html);
+  const match = text.match(/[\d,]+\.?\d*/);
+  if (!match) return null;
+  const price = parseFloat(match[0].replace(/,/g, ''));
+  return isNaN(price) ? null : price;
+}
+
+// 提取数字
+function extractNumber(html: string): number | null {
+  if (!html) return null;
+  const text = cleanText(html);
+  const match = text.match(/[\d,]+\.?\d*/);
+  if (!match) return null;
+  const num = parseFloat(match[0].replace(/,/g, ''));
+  return isNaN(num) ? null : num;
+}
+
+// 提取链接
+function extractLink(html: string, baseUrl: string): string | null {
+  if (!html) return null;
+  const match = html.match(/href=["']([^"']+)["']/);
+  if (!match) return null;
+
+  let link = match[1];
+
+  // 处理相对路径
+  try {
+    if (link.startsWith('http')) {
+      return link;
+    } else if (link.startsWith('/')) {
+      const urlObj = new URL(baseUrl);
+      return `${urlObj.protocol}//${urlObj.host}${link}`;
+    } else {
+      const urlObj = new URL(baseUrl);
+      const basePath = urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/'));
+      return `${urlObj.protocol}//${urlObj.host}${basePath}/${link}`;
+    }
+  } catch (error) {
+    console.error('链接解析失败:', error);
+    return null;
+  }
+}
+
+// 解析通道类型
+function parseChannelType(html: string): boolean | null {
+  if (!html) return null;
+  const text = cleanText(html);
+  if (!text || text === '-' || text.trim() === '') return null;
+  if (text.includes('通道') && !text.includes('非')) return true;
+  if (text.includes('非通道')) return false;
+  return null;
+}
+
+// 提取年份（支持单年份和多年份）
+function extractYear(html: string): string | null {
+  if (!html) return null;
+  const text = cleanText(html);
+
+  // 匹配多年份格式：2024/2025 或 2024-2025
+  const multiYearMatch = text.match(/(\d{4})[\/\-](\d{4})/);
+  if (multiYearMatch) {
+    return `${multiYearMatch[1]}/${multiYearMatch[2]}`;
+  }
+
+  // 匹配单年份格式：2025
+  const singleYearMatch = text.match(/\d{4}/);
+  if (singleYearMatch) {
+    return singleYearMatch[0];
+  }
+
+  return null;
+}
+
+// 解析日期
+function parseDate(html: string): string | null {
+  if (!html) return null;
+  const text = cleanText(html);
+
+  // 匹配日期格式：YYYY-MM-DD 或 YYYY/MM/DD 或 YYYY.MM.DD
+  const dateMatch = text.match(/(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/);
+  if (dateMatch) {
+    const year = dateMatch[1];
+    const month = dateMatch[2].padStart(2, '0');
+    const day = dateMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
+// 根据正则模式提取内容
+function extractByPattern(html: string, pattern: RegExp): string | null {
+  if (!html) return null;
+  const match = html.match(pattern);
+  return match ? cleanText(match[1]) : null;
+}
 
   return transactions;
 }
