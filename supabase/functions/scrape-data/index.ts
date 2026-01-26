@@ -118,8 +118,17 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 示例：使用正则表达式提取数据
   // 实际应用中需要根据目标网站的HTML结构编写具体的解析逻辑
   
-  // 这里返回一个示例数据，表示抓取功能已实现
-  // 在实际部署时，需要根据具体的网站HTML结构来解析数据
+  // 需要提取的字段：
+  // 1. project_name - 项目名称（必填）
+  // 2. bidding_unit - 招标单位
+  // 3. bidder_unit - 投标单位
+  // 4. winning_unit - 中标单位
+  // 5. total_price - 总价（数字）
+  // 6. unit_price - 绿证单价（数字）
+  // 7. detail_link - 具体标的信息链接
+  // 8. is_channel - 是否为通道（布尔值：true=通道，false=非通道）
+  // 9. cert_year - 绿证年份（整数）
+  // 10. transaction_date - 交易日期（格式：YYYY-MM-DD）
   
   // 示例：查找表格行或列表项
   // const tableRowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
@@ -133,6 +142,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //     user_id: userId,
   //     project_name: extractField(rowHtml, 'project'),
   //     bidding_unit: extractField(rowHtml, 'bidding'),
+  //     bidder_unit: extractField(rowHtml, 'bidder'),
   //     winning_unit: extractField(rowHtml, 'winning'),
   //     total_price: parseFloat(extractField(rowHtml, 'total_price')) || null,
   //     unit_price: parseFloat(extractField(rowHtml, 'unit_price')) || null,
@@ -147,6 +157,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 返回示例数据（实际应用中应该返回解析后的真实数据）
   console.log('HTML长度:', html.length);
   console.log('注意：这是示例实现，需要根据实际网站HTML结构编写解析逻辑');
+  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、绿证单价、详情链接、通道类型、绿证年份、交易日期');
 
   return transactions;
 }

@@ -88,13 +88,14 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                 <TableRow>
                   <TableHead>项目名称</TableHead>
                   <TableHead>招标单位</TableHead>
+                  <TableHead>投标单位</TableHead>
                   <TableHead>中标单位</TableHead>
                   <TableHead className="text-right">总价</TableHead>
-                  <TableHead className="text-right">单价</TableHead>
+                  <TableHead className="text-right">绿证单价</TableHead>
                   <TableHead>通道类型</TableHead>
-                  <TableHead>年份</TableHead>
+                  <TableHead>绿证年份</TableHead>
                   <TableHead>交易日期</TableHead>
-                  <TableHead>详情</TableHead>
+                  <TableHead>详情链接</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -105,6 +106,9 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
                       {transaction.bidding_unit || '-'}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {transaction.bidder_unit || '-'}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
                       {transaction.winning_unit || '-'}

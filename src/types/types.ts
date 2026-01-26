@@ -26,6 +26,7 @@ export interface Transaction {
   user_id: string;
   project_name: string;
   bidding_unit?: string;
+  bidder_unit?: string;
   winning_unit?: string;
   total_price?: number;
   unit_price?: number;
