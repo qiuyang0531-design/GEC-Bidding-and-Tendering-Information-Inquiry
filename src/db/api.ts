@@ -35,6 +35,23 @@ export async function addUrl(userId: string, url: string, name?: string): Promis
   return data;
 }
 
+// 更新URL
+export async function updateUrl(urlId: string, url: string, name?: string): Promise<Url> {
+  const { data, error } = await supabase
+    .from('urls')
+    .update({ url, name: name || null })
+    .eq('id', urlId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('更新URL失败:', error);
+    throw error;
+  }
+
+  return data;
+}
+
 // 删除URL
 export async function deleteUrl(urlId: string): Promise<void> {
   const { error } = await supabase

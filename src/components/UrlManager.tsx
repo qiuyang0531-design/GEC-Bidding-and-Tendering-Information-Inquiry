@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Plus, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
-import { addUrl, deleteUrl, getUserUrls } from '@/db/api';
+import { Trash2, Plus, Loader2, CheckCircle2, XCircle, AlertCircle, Pencil } from 'lucide-react';
+import { addUrl, deleteUrl, getUserUrls, updateUrl } from '@/db/api';
 import type { Url } from '@/types/types.ts';
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface UrlManagerProps {
   onUrlsChange?: () => void;
@@ -30,6 +38,13 @@ export default function UrlManager({ onUrlsChange, urlStatuses = {} }: UrlManage
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  
+  // 编辑相关状态
+  const [editingUrl, setEditingUrl] = useState<Url | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editUrl, setEditUrl] = useState('');
+  const [editUrlName, setEditUrlName] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
 
   // 加载URLs
   const loadUrls = async () => {
@@ -102,6 +117,67 @@ export default function UrlManager({ onUrlsChange, urlStatuses = {} }: UrlManage
     } catch (err) {
       setError('删除失败，请重试');
     }
+  };
+
+  // 打开编辑对话框
+  const handleEditUrl = (url: Url) => {
+    setEditingUrl(url);
+    setEditUrl(url.url);
+    setEditUrlName(url.name || '');
+    setEditDialogOpen(true);
+    setError('');
+    setSuccess('');
+  };
+
+  // 保存编辑
+  const handleSaveEdit = async () => {
+    if (!editingUrl) return;
+
+    setEditLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      // 验证URL格式
+      if (!editUrl.trim()) {
+        setError('请输入网址');
+        setEditLoading(false);
+        return;
+      }
+
+      // 简单的URL验证
+      try {
+        new URL(editUrl);
+      } catch {
+        setError('请输入有效的网址（包含http://或https://）');
+        setEditLoading(false);
+        return;
+      }
+
+      await updateUrl(editingUrl.id, editUrl, editUrlName || undefined);
+      setSuccess('网址更新成功');
+      setEditDialogOpen(false);
+      setEditingUrl(null);
+      await loadUrls();
+      onUrlsChange?.();
+    } catch (err: any) {
+      if (err.message?.includes('duplicate')) {
+        setError('该网址已存在');
+      } else {
+        setError('更新失败，请重试');
+      }
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setEditDialogOpen(false);
+    setEditingUrl(null);
+    setEditUrl('');
+    setEditUrlName('');
+    setError('');
   };
 
   return (
@@ -221,20 +297,89 @@ export default function UrlManager({ onUrlsChange, urlStatuses = {} }: UrlManage
                         )}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteUrl(url.id)}
-                      className="ml-2 shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {/* 操作按钮 */}
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditUrl(url)}
+                        className="h-8 w-8"
+                      >
+                        <Pencil className="h-4 w-4 text-primary" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteUrl(url.id)}
+                        className="h-8 w-8"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
         )}
+
+        {/* 编辑对话框 */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>编辑网址</DialogTitle>
+              <DialogDescription>
+                修改网址信息，保存后将更新数据库中的记录
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-url">网址 *</Label>
+                <Input
+                  id="edit-url"
+                  type="url"
+                  placeholder="https://example.com"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  disabled={editLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-url-name">备注名称（可选）</Label>
+                <Input
+                  id="edit-url-name"
+                  type="text"
+                  placeholder="例如：北京交易中心"
+                  value={editUrlName}
+                  onChange={(e) => setEditUrlName(e.target.value)}
+                  disabled={editLoading}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={handleCancelEdit}
+                disabled={editLoading}
+              >
+                取消
+              </Button>
+              <Button
+                onClick={handleSaveEdit}
+                disabled={editLoading}
+              >
+                {editLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    保存中...
+                  </>
+                ) : (
+                  '保存'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
