@@ -47,7 +47,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
 | 总价 | total_price | NUMERIC | ❌ | 交易总金额（元） |
 | 绿证单价 | unit_price | NUMERIC | ❌ | 每张绿证的单价（元） |
 | 详情链接 | detail_link | TEXT | ❌ | 查看详情的URL |
-| 通道类型 | is_channel | BOOLEAN | ❌ | true=通道，false=非通道 |
+| 通道类型 | is_channel | BOOLEAN | ❌ | true=通道，false=非通道，null=未标注 |
 | 绿证年份 | cert_year | INTEGER | ❌ | 绿证对应的年份 |
 | 交易日期 | transaction_date | DATE | ❌ | 交易发生的日期（YYYY-MM-DD） |
 
@@ -199,22 +199,40 @@ parseDate('2025年12月15日') // 返回 '2025-12-15'
 
 #### 通道类型处理
 ```typescript
-// 判断是否为通道
-function isChannel(text: string): boolean | null {
+// 判断通道类型（支持三种状态）
+function parseChannelType(text: string): boolean | null {
+  if (!text || text === '-' || text.trim() === '') {
+    return null; // 未标注
+  }
+  
   const lowerText = text.toLowerCase();
-  if (lowerText.includes('通道') || lowerText.includes('channel')) {
+  
+  // 判断是否为"通道"
+  if (lowerText.includes('通道') && !lowerText.includes('非')) {
     return true;
   }
-  if (lowerText.includes('非通道') || lowerText.includes('non-channel')) {
+  
+  // 判断是否为"非通道"
+  if (lowerText.includes('非通道')) {
     return false;
   }
+  
+  // 其他情况视为未标注
   return null;
 }
 
 // 示例
-isChannel('通道交易') // 返回 true
-isChannel('非通道') // 返回 false
+parseChannelType('通道交易') // 返回 true
+parseChannelType('非通道') // 返回 false
+parseChannelType('-') // 返回 null
+parseChannelType('') // 返回 null
+parseChannelType('未标注') // 返回 null
 ```
+
+**显示效果**：
+- `true` → 显示蓝色徽章"通道"
+- `false` → 显示灰色徽章"非通道"
+- `null` → 显示"-"
 
 #### 链接处理
 ```typescript
@@ -278,7 +296,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
         total_price: extractPrice(cells[4][1]), // 第5列：总价
         unit_price: extractPrice(cells[5][1]),  // 第6列：单价
         detail_link: extractLink(cells[0][1], 'https://example.com'), // 从项目名称提取链接
-        is_channel: isChannel(cells[6][1]),    // 第7列：通道类型
+        is_channel: parseChannelType(cells[6][1]), // 第7列：通道类型（支持三种状态）
         cert_year: parseInt(cleanText(cells[7][1])) || null, // 第8列：年份
         transaction_date: parseDate(cells[8][1]), // 第9列：日期
       };
@@ -332,10 +350,19 @@ function parseDate(text: string): string | null {
   return null;
 }
 
-function isChannel(text: string): boolean | null {
+function parseChannelType(text: string): boolean | null {
   const cleaned = cleanText(text).toLowerCase();
+  
+  // 空值或"-"视为未标注
+  if (!cleaned || cleaned === '-') return null;
+  
+  // 判断是否为"通道"
   if (cleaned.includes('通道') && !cleaned.includes('非')) return true;
+  
+  // 判断是否为"非通道"
   if (cleaned.includes('非通道')) return false;
+  
+  // 其他情况视为未标注
   return null;
 }
 

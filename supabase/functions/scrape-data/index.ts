@@ -124,9 +124,12 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 3. bidder_unit - 投标单位
   // 4. winning_unit - 中标单位
   // 5. total_price - 总价（数字）
-  // 6. unit_price - 绿证单价（数字）
+  // 6. unit_price - 绿证单价（数字，2025年约7元）
   // 7. detail_link - 具体标的信息链接
-  // 8. is_channel - 是否为通道（布尔值：true=通道，false=非通道）
+  // 8. is_channel - 通道类型（布尔值或null）
+  //    - true: 通道
+  //    - false: 非通道
+  //    - null: 未标注（显示为"-"）
   // 9. cert_year - 绿证年份（整数）
   // 10. transaction_date - 交易日期（格式：YYYY-MM-DD）
   
@@ -147,11 +150,19 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //     total_price: parseFloat(extractField(rowHtml, 'total_price')) || null,
   //     unit_price: parseFloat(extractField(rowHtml, 'unit_price')) || null,
   //     detail_link: extractField(rowHtml, 'link'),
-  //     is_channel: extractField(rowHtml, 'channel') === '通道',
+  //     is_channel: parseChannelType(extractField(rowHtml, 'channel')),
   //     cert_year: parseInt(extractField(rowHtml, 'year')) || null,
   //     transaction_date: extractField(rowHtml, 'date') || null,
   //   };
   //   transactions.push(transaction);
+  // }
+  
+  // 通道类型解析辅助函数
+  // function parseChannelType(text: string): boolean | null {
+  //   if (!text || text === '-' || text.trim() === '') return null;
+  //   if (text.includes('通道') && !text.includes('非')) return true;
+  //   if (text.includes('非通道')) return false;
+  //   return null;
   // }
 
   // 返回示例数据（实际应用中应该返回解析后的真实数据）
