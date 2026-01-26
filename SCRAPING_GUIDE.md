@@ -48,7 +48,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
 | 绿证单价 | unit_price | NUMERIC | ❌ | 每张绿证的单价（元） |
 | 详情链接 | detail_link | TEXT | ❌ | 查看详情的URL |
 | 通道类型 | is_channel | BOOLEAN | ❌ | true=通道，false=非通道，null=未标注 |
-| 绿证年份 | cert_year | INTEGER | ❌ | 绿证对应的年份 |
+| 绿证年份 | cert_year | TEXT | ❌ | 单年份"2025"或多年份"2024/2025" |
 | 交易日期 | transaction_date | DATE | ❌ | 交易发生的日期（YYYY-MM-DD） |
 
 ## 🛠️ 定制步骤
@@ -234,6 +234,38 @@ parseChannelType('未标注') // 返回 null
 - `false` → 显示灰色徽章"非通道"
 - `null` → 显示"-"
 
+#### 年份处理
+```typescript
+// 提取年份（支持单年份和多年份）
+function extractYear(text: string): string | null {
+  const cleaned = cleanText(text);
+  
+  // 匹配多年份格式：2024/2025 或 2024-2025
+  let match = cleaned.match(/(\d{4})[\/\-](\d{4})/);
+  if (match) {
+    return `${match[1]}/${match[2]}`; // 统一使用"/"分隔
+  }
+  
+  // 匹配单年份：2025
+  match = cleaned.match(/(\d{4})/);
+  if (match) {
+    return match[1];
+  }
+  
+  return null;
+}
+
+// 示例
+extractYear('2025年') // 返回 "2025"
+extractYear('2024/2025年度') // 返回 "2024/2025"
+extractYear('2024-2025') // 返回 "2024/2025"
+extractYear('2025') // 返回 "2025"
+```
+
+**显示效果**：
+- 单年份：直接显示"2025"
+- 多年份：显示"2024/2025"
+
 #### 链接处理
 ```typescript
 // 提取链接
@@ -297,7 +329,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
         unit_price: extractPrice(cells[5][1]),  // 第6列：单价
         detail_link: extractLink(cells[0][1], 'https://example.com'), // 从项目名称提取链接
         is_channel: parseChannelType(cells[6][1]), // 第7列：通道类型（支持三种状态）
-        cert_year: parseInt(cleanText(cells[7][1])) || null, // 第8列：年份
+        cert_year: extractYear(cells[7][1]), // 第8列：年份（支持单年份和多年份）
         transaction_date: parseDate(cells[8][1]), // 第9列：日期
       };
       
@@ -363,6 +395,24 @@ function parseChannelType(text: string): boolean | null {
   if (cleaned.includes('非通道')) return false;
   
   // 其他情况视为未标注
+  return null;
+}
+
+function extractYear(text: string): string | null {
+  const cleaned = cleanText(text);
+  
+  // 匹配多年份格式：2024/2025 或 2024-2025
+  let match = cleaned.match(/(\d{4})[\/\-](\d{4})/);
+  if (match) {
+    return `${match[1]}/${match[2]}`; // 统一使用"/"分隔
+  }
+  
+  // 匹配单年份：2025
+  match = cleaned.match(/(\d{4})/);
+  if (match) {
+    return match[1];
+  }
+  
   return null;
 }
 

@@ -130,7 +130,9 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //    - true: 通道
   //    - false: 非通道
   //    - null: 未标注（显示为"-"）
-  // 9. cert_year - 绿证年份（整数）
+  // 9. cert_year - 绿证年份（文本格式）
+  //    - 单年份: "2025"
+  //    - 多年份: "2024/2025" 或 "2024-2026"
   // 10. transaction_date - 交易日期（格式：YYYY-MM-DD）
   
   // 示例：查找表格行或列表项
@@ -151,7 +153,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //     unit_price: parseFloat(extractField(rowHtml, 'unit_price')) || null,
   //     detail_link: extractField(rowHtml, 'link'),
   //     is_channel: parseChannelType(extractField(rowHtml, 'channel')),
-  //     cert_year: parseInt(extractField(rowHtml, 'year')) || null,
+  //     cert_year: extractField(rowHtml, 'year') || null, // 文本格式，支持"2025"或"2024/2025"
   //     transaction_date: extractField(rowHtml, 'date') || null,
   //   };
   //   transactions.push(transaction);

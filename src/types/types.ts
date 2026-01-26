@@ -32,7 +32,7 @@ export interface Transaction {
   unit_price?: number;
   detail_link?: string;
   is_channel?: boolean;
-  cert_year?: number;
+  cert_year?: string; // 支持单年份（"2025"）或多年份（"2024/2025"）
   transaction_date?: string;
   created_at: string;
   updated_at: string;
