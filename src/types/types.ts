@@ -1,0 +1,38 @@
+// 用户角色
+export type UserRole = 'user' | 'admin';
+
+// 用户Profile
+export interface Profile {
+  id: string;
+  username: string;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
+// 查询网址
+export interface Url {
+  id: string;
+  user_id: string;
+  url: string;
+  name?: string;
+  created_at: string;
+}
+
+// 交易记录
+export interface Transaction {
+  id: string;
+  url_id: string;
+  user_id: string;
+  project_name: string;
+  bidding_unit?: string;
+  winning_unit?: string;
+  total_price?: number;
+  unit_price?: number;
+  detail_link?: string;
+  is_channel?: boolean;
+  cert_year?: number;
+  transaction_date?: string;
+  created_at: string;
+  updated_at: string;
+}
