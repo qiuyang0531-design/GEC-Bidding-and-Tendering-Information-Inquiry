@@ -101,7 +101,9 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                   <TableHead className="text-right">绿证单价</TableHead>
                   <TableHead>通道类型</TableHead>
                   <TableHead>绿证年份</TableHead>
-                  <TableHead>交易日期</TableHead>
+                  <TableHead>招标开始日期</TableHead>
+                  <TableHead>招标结束日期</TableHead>
+                  <TableHead>中标日期</TableHead>
                   <TableHead>详情链接</TableHead>
                 </TableRow>
               </TableHeader>
@@ -136,7 +138,9 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                       )}
                     </TableCell>
                     <TableCell>{transaction.cert_year || '-'}</TableCell>
-                    <TableCell>{formatDate(transaction.transaction_date)}</TableCell>
+                    <TableCell>{formatDate(transaction.bid_start_date)}</TableCell>
+                    <TableCell>{formatDate(transaction.bid_end_date)}</TableCell>
+                    <TableCell>{formatDate(transaction.award_date)}</TableCell>
                     <TableCell>
                       {transaction.detail_link ? (
                         <Button

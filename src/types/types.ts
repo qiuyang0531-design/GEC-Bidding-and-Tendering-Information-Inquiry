@@ -33,7 +33,9 @@ export interface Transaction {
   detail_link?: string;
   is_channel?: boolean;
   cert_year?: string; // 支持单年份（"2025"）或多年份（"2024/2025"）
-  transaction_date?: string;
+  bid_start_date?: string; // 招标开始日期
+  bid_end_date?: string; // 招标结束日期
+  award_date?: string; // 中标日期
   created_at: string;
   updated_at: string;
 }

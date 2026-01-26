@@ -49,7 +49,9 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
 | 详情链接 | detail_link | TEXT | ❌ | 查看详情的URL |
 | 通道类型 | is_channel | BOOLEAN | ❌ | true=通道，false=非通道，null=未标注 |
 | 绿证年份 | cert_year | TEXT | ❌ | 单年份"2025"或多年份"2024/2025" |
-| 交易日期 | transaction_date | DATE | ❌ | 交易发生的日期（YYYY-MM-DD） |
+| 招标开始日期 | bid_start_date | DATE | ❌ | 招标开始的日期（YYYY-MM-DD） |
+| 招标结束日期 | bid_end_date | DATE | ❌ | 招标结束的日期（YYYY-MM-DD） |
+| 中标日期 | award_date | DATE | ❌ | 中标的日期（YYYY-MM-DD） |
 
 ## 🛠️ 定制步骤
 
@@ -266,6 +268,42 @@ extractYear('2025') // 返回 "2025"
 - 单年份：直接显示"2025"
 - 多年份：显示"2024/2025"
 
+#### 日期处理
+```typescript
+// 提取日期（支持多种格式）
+function parseDate(text: string): string | null {
+  const cleaned = cleanText(text);
+  
+  // YYYY-MM-DD
+  let match = cleaned.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return match[0];
+  
+  // YYYY年MM月DD日
+  match = cleaned.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  
+  return null;
+}
+
+// 示例
+parseDate('2025-11-20') // 返回 "2025-11-20"
+parseDate('2025年11月20日') // 返回 "2025-11-20"
+parseDate('2025/11/20') // 返回 null（需要添加支持）
+```
+
+**三个日期字段说明**：
+- **招标开始日期**（bid_start_date）：招标公告发布日期或招标开始接受投标的日期
+- **招标结束日期**（bid_end_date）：招标截止日期，投标的最后期限
+- **中标日期**（award_date）：公布中标结果的日期
+
+**使用场景**：
+- 招标信息：通常包含招标开始日期和招标结束日期，中标日期为空
+- 中标信息：通常包含中标日期，可能也包含招标日期
+- 完整信息：三个日期都有
+
 #### 链接处理
 ```typescript
 // 提取链接
@@ -330,7 +368,9 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
         detail_link: extractLink(cells[0][1], 'https://example.com'), // 从项目名称提取链接
         is_channel: parseChannelType(cells[6][1]), // 第7列：通道类型（支持三种状态）
         cert_year: extractYear(cells[7][1]), // 第8列：年份（支持单年份和多年份）
-        transaction_date: parseDate(cells[8][1]), // 第9列：日期
+        bid_start_date: parseDate(cells[8][1]), // 第9列：招标开始日期
+        bid_end_date: parseDate(cells[9][1]), // 第10列：招标结束日期
+        award_date: parseDate(cells[10][1]), // 第11列：中标日期
       };
       
       // 4. 验证必填字段

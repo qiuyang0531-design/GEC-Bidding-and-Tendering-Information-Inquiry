@@ -133,7 +133,9 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 9. cert_year - 绿证年份（文本格式）
   //    - 单年份: "2025"
   //    - 多年份: "2024/2025" 或 "2024-2026"
-  // 10. transaction_date - 交易日期（格式：YYYY-MM-DD）
+  // 10. bid_start_date - 招标开始日期（格式：YYYY-MM-DD）
+  // 11. bid_end_date - 招标结束日期（格式：YYYY-MM-DD）
+  // 12. award_date - 中标日期（格式：YYYY-MM-DD）
   
   // 示例：查找表格行或列表项
   // const tableRowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
@@ -154,7 +156,9 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   //     detail_link: extractField(rowHtml, 'link'),
   //     is_channel: parseChannelType(extractField(rowHtml, 'channel')),
   //     cert_year: extractField(rowHtml, 'year') || null, // 文本格式，支持"2025"或"2024/2025"
-  //     transaction_date: extractField(rowHtml, 'date') || null,
+  //     bid_start_date: extractField(rowHtml, 'bid_start') || null, // 招标开始日期
+  //     bid_end_date: extractField(rowHtml, 'bid_end') || null, // 招标结束日期
+  //     award_date: extractField(rowHtml, 'award') || null, // 中标日期
   //   };
   //   transactions.push(transaction);
   // }
@@ -170,7 +174,7 @@ function parseHtmlData(html: string, urlId: string, userId: string): any[] {
   // 返回示例数据（实际应用中应该返回解析后的真实数据）
   console.log('HTML长度:', html.length);
   console.log('注意：这是示例实现，需要根据实际网站HTML结构编写解析逻辑');
-  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、绿证单价、详情链接、通道类型、绿证年份、交易日期');
+  console.log('需要提取的字段：项目名称、招标单位、投标单位、中标单位、总价、绿证单价、详情链接、通道类型、绿证年份、招标开始日期、招标结束日期、中标日期');
 
   return transactions;
 }

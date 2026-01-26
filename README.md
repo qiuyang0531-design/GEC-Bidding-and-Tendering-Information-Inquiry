@@ -18,10 +18,13 @@
 - 📘 [完整使用说明](USAGE.md) - 详细的功能说明和使用流程
 - 🔧 [数据抓取定制指南](SCRAPING_GUIDE.md) - 如何定制数据抓取逻辑
 - 🏷️ [通道类型字段说明](CHANNEL_TYPE_GUIDE.md) - 通道类型三种状态的详细说明
+- 📅 [日期字段说明](DATE_FIELDS_GUIDE.md) - 招标和中标日期字段的详细说明
 - ✅ [功能实现清单](CHECKLIST.md) - 完整的功能列表和技术栈
 - 📝 [开发任务清单](TODO.md) - 开发进度和注意事项
 - 📦 [项目交付说明](DELIVERY.md) - 完整的交付文档
 - 🔄 [数据修正说明](DATA_CORRECTION.md) - 数据修正历史记录
+- 📋 [更新日志](CHANGELOG.md) - 版本更新历史
+- 🎯 [功能特性总结](FEATURE_SUMMARY.md) - 完整的功能特性说明
 
 ### 🎨 设计特色
 
