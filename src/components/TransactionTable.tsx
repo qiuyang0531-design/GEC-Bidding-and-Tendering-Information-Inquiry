@@ -60,9 +60,16 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
       <CardHeader>
         <CardTitle>交易数据</CardTitle>
         <CardDescription>
-          {transactions.length > 0 
-            ? `共 ${transactions.length} 条记录` 
-            : '暂无数据，请先添加网址并执行查询'}
+          {transactions.length > 0 ? (
+            <>
+              <span>共 {transactions.length} 条记录</span>
+              <span className="block mt-1 text-xs">
+                💡 提示：当前显示的是示例数据（2025年绿证价格约7元），详情链接需要从实际网站抓取后才能显示
+              </span>
+            </>
+          ) : (
+            '暂无数据，请先添加网址并执行查询'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -141,12 +148,13 @@ export default function TransactionTable({ startDate, endDate, refreshTrigger }:
                             href={transaction.detail_link}
                             target="_blank"
                             rel="noopener noreferrer"
+                            title="查看详情"
                           >
                             <ExternalLink className="h-4 w-4" />
                           </a>
                         </Button>
                       ) : (
-                        '-'
+                        <span className="text-xs text-muted-foreground">暂无链接</span>
                       )}
                     </TableCell>
                   </TableRow>
