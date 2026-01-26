@@ -61,15 +61,30 @@ export async function getTransactions(
     .select('*')
     .eq('user_id', userId);
 
-  if (startDate) {
-    query = query.gte('transaction_date', startDate);
+  // 日期筛选：优先使用中标日期，如果没有则使用招标开始日期
+  if (startDate || endDate) {
+    // 使用or条件：中标日期在范围内 或 招标开始日期在范围内
+    const conditions: string[] = [];
+    
+    if (startDate && endDate) {
+      conditions.push(`award_date.gte.${startDate},award_date.lte.${endDate}`);
+      conditions.push(`bid_start_date.gte.${startDate},bid_start_date.lte.${endDate}`);
+    } else if (startDate) {
+      conditions.push(`award_date.gte.${startDate}`);
+      conditions.push(`bid_start_date.gte.${startDate}`);
+    } else if (endDate) {
+      conditions.push(`award_date.lte.${endDate}`);
+      conditions.push(`bid_start_date.lte.${endDate}`);
+    }
+    
+    if (conditions.length > 0) {
+      query = query.or(conditions.join(','));
+    }
   }
 
-  if (endDate) {
-    query = query.lte('transaction_date', endDate);
-  }
-
-  const { data, error } = await query.order('transaction_date', { ascending: false });
+  // 排序：优先按中标日期降序，如果没有中标日期则按招标开始日期降序
+  const { data, error } = await query.order('award_date', { ascending: false, nullsFirst: false })
+                                     .order('bid_start_date', { ascending: false, nullsFirst: false });
 
   if (error) {
     console.error('获取交易数据失败:', error);

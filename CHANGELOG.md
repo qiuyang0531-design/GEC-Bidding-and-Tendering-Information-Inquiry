@@ -1,5 +1,39 @@
 # 更新日志
 
+## v1.4.1 (2026-01-26)
+
+### 🐛 Bug修复
+
+#### 修复交易数据无法显示的问题
+- **问题**：数据库迁移后，API查询仍使用旧的`transaction_date`字段，导致查询失败
+- **错误信息**：`column transactions.transaction_date does not exist`
+- **修复方案**：
+  - 更新`getTransactions`函数，使用新的三个日期字段
+  - 日期筛选：支持`award_date`（中标日期）和`bid_start_date`（招标开始日期）
+  - 排序逻辑：优先按`award_date`降序，其次按`bid_start_date`降序
+  - NULL值处理：使用`nullsFirst: false`确保有日期的记录优先显示
+
+#### 技术细节
+```typescript
+// 修复前（错误）
+query = query.gte('transaction_date', startDate);
+query = query.lte('transaction_date', endDate);
+query.order('transaction_date', { ascending: false });
+
+// 修复后（正确）
+query = query.or('award_date.gte.${startDate},bid_start_date.gte.${startDate}');
+query.order('award_date', { ascending: false, nullsFirst: false })
+     .order('bid_start_date', { ascending: false, nullsFirst: false });
+```
+
+### ✅ 验证结果
+- 数据库包含4条示例数据（3条已中标，1条招标中）
+- API查询成功返回所有数据
+- 交易数据表格正常显示
+- 代码质量检查通过
+
+---
+
 ## v1.4.0 (2026-01-26)
 
 ### 🎯 新增功能
