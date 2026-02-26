@@ -23,6 +23,20 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
+  const apiKey = req.headers.get('apikey');
+  const receivedKey = (authHeader || apiKey || '').trim();
+  const expectedAnonKey = (Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
+  const expectedServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+  const expectedCustomAnonKey = (Deno.env.get('SB_ANON_KEY') || '').trim();
+  if (receivedKey !== expectedAnonKey && receivedKey !== expectedServiceKey && receivedKey !== expectedCustomAnonKey) {
+    console.error('【授权失败】收到钥匙长度与尾8位:', { len: receivedKey.length, tail8: receivedKey.slice(-8) });
+    return new Response(JSON.stringify({ error: '未授权' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const { urlId, url, maxPages = 10 } = await req.json();
 

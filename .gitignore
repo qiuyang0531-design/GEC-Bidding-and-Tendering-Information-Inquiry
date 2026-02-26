@@ -54,3 +54,7 @@ cleanup-plan.md
 .claude
 .codex
 .opencode
+
+# Supabase CLI executable
+supabase.exe
+supabase

@@ -22,11 +22,25 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
+  const apiKey = req.headers.get('apikey');
+  const receivedKey = (authHeader || apiKey || '').trim();
+  const expectedAnonKey = (Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
+  const expectedServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+  const expectedCustomAnonKey = (Deno.env.get('SB_ANON_KEY') || '').trim();
+  if (receivedKey !== expectedAnonKey && receivedKey !== expectedServiceKey && receivedKey !== expectedCustomAnonKey) {
+    console.error('【授权失败】收到钥匙长度与尾8位:', { len: receivedKey.length, tail8: receivedKey.slice(-8) });
+    return new Response(JSON.stringify({ error: '未授权' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    // 创建Supabase客户端
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', // 使用service role key以绕过RLS
+      Deno.env.get('SB_URL') ?? Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SB_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      Deno.env.get('SB_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
         global: {
           headers: { Authorization: req.headers.get('Authorization')! },
