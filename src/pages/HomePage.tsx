@@ -11,18 +11,43 @@ import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import UrlManager from '@/components/UrlManager';
 import TransactionTable from '@/components/TransactionTable';
-import { getUserUrls, scrapeUrlData } from '@/db/api';
+import NotificationCenter from '@/components/NotificationCenter';
+import DataSourceManager from '@/components/DataSourceManager';
+import ScrapingHistory from '@/components/ScrapingHistory';
+import { getUserUrls, scrapeUrlData, multiChannelScrape } from '@/db/api';
+import { CSG_CHANNELS } from '@/lib/gec-channels';
+import { useNavigate } from 'react-router-dom';
 
 export default function HomePage() {
   const { user, profile } = useAuth();
-  const [startDate, setStartDate] = useState<Date>();
-  const [endDate, setEndDate] = useState<Date>();
+  const navigate = useNavigate();
+  // 日期范围状态
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({ from: undefined, to: undefined });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   // 记录每个网址的查询状态
   const [urlStatuses, setUrlStatuses] = useState<Record<string, { status: 'success' | 'error' | 'idle'; message?: string }>>({});
+
+  // 多频道抓取状态
+  const [multiChannelScraping, setMultiChannelScraping] = useState(false);
+  const [scrapeProgress, setScrapeProgress] = useState<{
+    channelName: string;
+    current: number;
+    total: number;
+    message: string;
+  } | null>(null);
+  const [scrapeResults, setScrapeResults] = useState<{
+    channels: number;
+    links: number;
+    success: number;
+    failed: number;
+    irrelevant: number;
+  } | null>(null);
 
   const adminBadge: any = profile?.role === 'admin' ? (
     <span className="ml-2 text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
@@ -91,6 +116,68 @@ export default function HomePage() {
     }
   };
 
+  // 多频道抓取
+  const handleMultiChannelScrape = async () => {
+    if (!user) return;
+
+    setMultiChannelScraping(true);
+    setError('');
+    setSuccess('');
+    setScrapeProgress(null);
+    setScrapeResults(null);
+
+    try {
+      console.log('🎯 开始多频道自动抓取...');
+      console.log('📋 启用的频道:', CSG_CHANNELS.filter(ch => ch.enabled).map(ch => ch.name).join(', '));
+
+      const result = await multiChannelScrape(user.id, undefined, {
+        maxPages: 5,
+        delay: 2000,
+        onProgress: (update) => {
+          setScrapeProgress(update);
+        },
+      });
+
+      if (!result.success) {
+        setError('多频道抓取失败');
+        return;
+      }
+
+      setScrapeResults(result.total);
+
+      // 构建结果消息
+      let message = `多频道抓取完成！`;
+      message += ` 共 ${result.total.channels} 个频道`;
+      message += `，${result.total.links} 个链接`;
+      if (result.total.success > 0) {
+        message += `，成功 ${result.total.success} 条`;
+      }
+      if (result.total.irrelevant > 0) {
+        message += `，跳过 ${result.total.irrelevant} 条无关内容`;
+      }
+      if (result.total.failed > 0) {
+        message += `，失败 ${result.total.failed} 条`;
+      }
+
+      setSuccess(message);
+
+      // 刷新交易数据
+      setRefreshTrigger(prev => prev + 1);
+
+      // 5秒后清除进度
+      setTimeout(() => {
+        setScrapeProgress(null);
+        setScrapeResults(null);
+      }, 5000);
+
+    } catch (err: any) {
+      console.error('多频道抓取失败:', err);
+      setError(err.message || '多频道抓取失败');
+    } finally {
+      setMultiChannelScraping(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/10">
       {/* 头部 */}
@@ -109,6 +196,13 @@ export default function HomePage() {
                 </p>
               </div>
             </div>
+            <NotificationCenter
+              onNavigate={(link) => {
+                if (link.startsWith('/')) {
+                  navigate(link);
+                }
+              }}
+            />
           </div>
         </div>
       </header>
@@ -116,12 +210,20 @@ export default function HomePage() {
       {/* 主内容 */}
       <main className="container mx-auto px-4 py-8">
         <div className="grid gap-6 xl:grid-cols-3">
-          {/* 左侧：网址管理 */}
-          <div className="xl:col-span-1">
-            <UrlManager 
-              onUrlsChange={() => setRefreshTrigger(prev => prev + 1)} 
+          {/* 左侧：网址管理 + 管理员功能 */}
+          <div className="xl:col-span-1 space-y-6">
+            <UrlManager
+              onUrlsChange={() => setRefreshTrigger(prev => prev + 1)}
               urlStatuses={urlStatuses}
             />
+
+            {/* 管理员专属功能 */}
+            {profile?.role === 'admin' && (
+              <>
+                <DataSourceManager />
+                <ScrapingHistory limit={20} />
+              </>
+            )}
           </div>
 
           {/* 右侧：查询和数据展示 */}
@@ -145,62 +247,49 @@ export default function HomePage() {
                 )}
 
                 {/* 日期选择 */}
-                <div className="grid gap-4 @md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">开始日期</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            'w-full justify-start text-left font-normal',
-                            !startDate && 'text-muted-foreground'
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {startDate ? format(startDate, 'PPP', { locale: zhCN }) : '选择日期'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={startDate}
-                          onSelect={setStartDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">结束日期</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            'w-full justify-start text-left font-normal',
-                            !endDate && 'text-muted-foreground'
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {endDate ? format(endDate, 'PPP', { locale: zhCN }) : '选择日期'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={endDate}
-                          onSelect={setEndDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">日期范围</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          'w-full justify-start text-left font-normal',
+                          !dateRange.from && 'text-muted-foreground'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, 'PPP', { locale: zhCN })} - {format(dateRange.to, 'PPP', { locale: zhCN })}
+                            </>
+                          ) : (
+                            format(dateRange.from, 'PPP', { locale: zhCN })
+                          )
+                        ) : (
+                          '选择日期范围'
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="range"
+                        selected={{
+                          from: dateRange.from,
+                          to: dateRange.to,
+                        }}
+                        onSelect={(range) => {
+                          setDateRange(range || { from: undefined, to: undefined });
+                        }}
+                        numberOfMonths={2}
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* 查询按钮 */}
-                <Button onClick={handleQuery} disabled={loading} className="w-full" size="lg">
+                <Button onClick={handleQuery} disabled={loading || multiChannelScraping} className="w-full" size="lg">
                   {loading ? (
                     <>
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -213,13 +302,67 @@ export default function HomePage() {
                     </>
                   )}
                 </Button>
+
+                {/* 多频道抓取按钮 */}
+                <Button
+                  onClick={handleMultiChannelScrape}
+                  disabled={loading || multiChannelScraping}
+                  variant="secondary"
+                  className="w-full"
+                  size="lg"
+                >
+                  {multiChannelScraping ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      多频道抓取中...
+                    </>
+                  ) : (
+                    <>
+                      <Leaf className="mr-2 h-5 w-5" />
+                      多频道自动抓取
+                    </>
+                  )}
+                </Button>
+
+                {/* 多频道抓取进度 */}
+                {scrapeProgress && (
+                  <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+                    <AlertDescription className="text-blue-700 dark:text-blue-300">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="font-medium">{scrapeProgress.channelName}</span>
+                      </div>
+                      <div className="text-sm mt-1">{scrapeProgress.message}</div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* 多频道抓取结果摘要 */}
+                {scrapeResults && (
+                  <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
+                    <AlertDescription className="text-green-700 dark:text-green-300">
+                      <div className="font-medium mb-1">抓取结果摘要：</div>
+                      <div className="text-sm space-y-1">
+                        <div>• 频道数: {scrapeResults.channels}</div>
+                        <div>• 总链接: {scrapeResults.links}</div>
+                        <div>• 成功: {scrapeResults.success} 条</div>
+                        {scrapeResults.irrelevant > 0 && (
+                          <div>• 跳过: {scrapeResults.irrelevant} 条（无关内容）</div>
+                        )}
+                        {scrapeResults.failed > 0 && (
+                          <div className="text-red-600">• 失败: {scrapeResults.failed} 条</div>
+                        )}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
               </CardContent>
             </Card>
 
             {/* 交易数据表格 */}
             <TransactionTable
-              startDate={startDate ? format(startDate, 'yyyy-MM-dd') : undefined}
-              endDate={endDate ? format(endDate, 'yyyy-MM-dd') : undefined}
+              startDate={dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : undefined}
+              endDate={dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined}
               refreshTrigger={refreshTrigger}
             />
           </div>

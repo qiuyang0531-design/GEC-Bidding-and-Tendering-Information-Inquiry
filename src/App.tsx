@@ -17,7 +17,7 @@ function Navbar(): React.ReactElement | null {
 
   if (!user) return null;
 
-  const adminBadge: any = profile?.role === 'admin' ? (
+  const adminBadge: React.ReactElement | null = profile?.role === 'admin' ? (
     <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
       管理员
     </span>
@@ -28,7 +28,7 @@ function Navbar(): React.ReactElement | null {
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">{(profile?.username as any) || '用户'}</span>
+            <span className="font-semibold">{profile?.username || '用户'}</span>
             {adminBadge}
           </div>
           <Button variant="ghost" size="sm" onClick={signOut}>

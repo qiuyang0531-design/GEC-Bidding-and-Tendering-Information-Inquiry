@@ -25,6 +25,7 @@ export interface Transaction {
   url_id: string;
   user_id: string;
   project_name: string;
+  procurement_number?: string; // 招标编号（唯一键）
   bidding_unit?: string;
   bidder_unit?: string;
   winning_unit?: string;
@@ -37,6 +38,7 @@ export interface Transaction {
   bid_start_date?: string; // 招标开始日期
   bid_end_date?: string; // 招标结束日期
   award_date?: string; // 中标日期
+  publish_date?: string; // 发布时间
   created_at: string;
   updated_at: string;
 }

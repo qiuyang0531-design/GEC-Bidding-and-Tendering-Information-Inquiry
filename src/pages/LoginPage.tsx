@@ -10,10 +10,12 @@ import { Leaf } from 'lucide-react';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithUsername } = useAuth();
+  const [loginType, setLoginType] = useState<'username' | 'email'>('email');
+  const { signInWithUsername, signInWithEmail } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -22,26 +24,49 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 验证输入
-      if (!username.trim() || !password) {
-        setError('请输入用户名和密码');
-        setLoading(false);
-        return;
-      }
+      if (loginType === 'username') {
+        // 用户名登录
+        if (!username.trim() || !password) {
+          setError('请输入用户名和密码');
+          setLoading(false);
+          return;
+        }
 
-      // 验证用户名格式（只允许字母、数字和下划线）
-      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-        setError('用户名只能包含字母、数字和下划线');
-        setLoading(false);
-        return;
-      }
+        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+          setError('用户名只能包含字母、数字和下划线');
+          setLoading(false);
+          return;
+        }
 
-      const { error: signInError } = await signInWithUsername(username, password);
+        const { error: signInError } = await signInWithUsername(username, password);
 
-      if (signInError) {
-        setError('登录失败，请检查用户名和密码');
+        if (signInError) {
+          setError('登录失败，请检查用户名和密码');
+        } else {
+          navigate('/');
+        }
       } else {
-        navigate('/');
+        // 邮箱登录
+        if (!email.trim() || !password) {
+          setError('请输入邮箱和密码');
+          setLoading(false);
+          return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          setError('请输入有效的邮箱地址');
+          setLoading(false);
+          return;
+        }
+
+        const { error: signInError } = await signInWithEmail(email, password);
+
+        if (signInError) {
+          setError('登录失败，请检查邮箱和密码');
+        } else {
+          navigate('/');
+        }
       }
     } catch (err) {
       setError('登录失败，请重试');
@@ -69,38 +94,107 @@ export default function LoginPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="username">用户名</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="请输入用户名"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={loading}
-                autoComplete="username"
-              />
+            {/* 登录方式切换 */}
+            <div className="flex gap-2 p-1 bg-muted rounded-lg">
+              <button
+                type="button"
+                onClick={() => setLoginType('email')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  loginType === 'email'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                邮箱登录
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginType('username')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  loginType === 'username'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                用户名登录
+              </button>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">密码</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="请输入密码"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                autoComplete="current-password"
-              />
-            </div>
+
+            {loginType === 'email' ? (
+              /* 邮箱登录表单 */
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="email">邮箱</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="请输入您的邮箱地址"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
+                    autoComplete="email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">密码</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="请输入密码"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    autoComplete="current-password"
+                  />
+                </div>
+              </>
+            ) : (
+              /* 用户名登录表单 */
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="username">用户名</Label>
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="请输入用户名"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={loading}
+                    autoComplete="username"
+                  />
+                  <p className="text-xs text-muted-foreground">旧版用户请使用用户名登录</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">密码</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="请输入密码"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    autoComplete="current-password"
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? '登录中...' : '登录'}
             </Button>
-            <div className="text-sm text-center text-muted-foreground">
-              还没有账户？{' '}
-              <Link to="/register" className="text-primary hover:underline">
+            <div className="flex justify-between text-sm">
+              <Link
+                to="/forgot-password"
+                className="text-muted-foreground hover:text-primary transition-colors"
+              >
+                忘记密码？
+              </Link>
+              <span className="text-muted-foreground">还没有账户？</span>
+              <Link
+                to="/register"
+                className="text-primary hover:underline"
+              >
                 立即注册
               </Link>
             </div>
