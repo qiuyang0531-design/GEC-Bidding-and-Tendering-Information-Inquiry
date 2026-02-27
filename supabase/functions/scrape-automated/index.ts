@@ -1,4 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createHash } from 'https://deno.land/std@0.177.0/node/crypto.ts';
 
 // CORS headers
 const corsHeaders = {
@@ -318,13 +319,32 @@ function parseHtmlData(html: string, urlId: string, userId: string, baseUrl: str
 }
 
 function toPlainText(html: string): string {
-  // 保留结构化标签，仅去除噪声标签，直接返回结构化HTML供 LLM 解析表格语义
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-    .replace(/<img[\s\S]*?>/gi, '')
-    .replace(/<video[\s\S]*?<\/video>/gi, '');
+  if (!html) return "";
+  // 1. 暴力剔除 script/style 等整块代码区
+  let text = html.replace(/<(script|style|svg|img|video)[^>]*>[\s\S]*?<\/\1>/gi, '');
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  // 2. 终极卸妆：强制把所有带属性的标签（如 <td style="mso-...">）洗成绝对纯净标签（如 <td>）
+  text = text.replace(/<([a-zA-Z0-9]+)\b[^>]*>/g, '<$1>');
+  // 3. 压缩空白，为 LLM 节省注意力
+  text = text.replace(/\s{2,}/g, ' ').replace(/\n+/g, '\n');
+  return text.trim();
+}
+
+/**
+ * 检查网页列表是否有实质性更新
+ * @param htmlContent 抓取到的原始 HTML 或清洗后的文本
+ * @param lastHash 数据库中存储的上一次 Hash 值
+ * @returns boolean true 表示有更新，false 表示没变
+ */
+function hasPageUpdated(htmlContent: string, lastHash: string | null): { updated: boolean, newHash: string } {
+  const cleanContent = (htmlContent || '').trim();
+  const newHash = createHash('md5').update(cleanContent).digest('hex');
+  if (lastHash === newHash) {
+    console.log("【巡逻发现】指纹未变，内容没更新，跳过 LLM 扫描以节省 Token。");
+    return { updated: false, newHash };
+  }
+  console.log("【巡逻发现】网页内容已更新！新指纹:", newHash);
+  return { updated: true, newHash };
 }
 
 async function llmExtractTransactions(rawText: string, urlId: string, userId: string, detailUrl: string): Promise<any[]> {
@@ -369,10 +389,13 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
     '全局约束：尽最大努力填充字段，除非通篇毫无线索，否则不要轻易填null；任何情况下都不得省略字段 key。'
   ].join('\n');
   const userContent = ['HTML：', rawText, '', '仅输出JSON数组，不要包含多余文本。'].join('\n');
-  const body = { model, temperature: 0, response_format: { type: "json_object" }, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
+  const body = { model, temperature: 0.1, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    let jsonText = "";
+    const text = rawText;
+    console.log("【强力探针】喂给LLM的纯净HTML中是否包含16120:", text.includes("16120"));
     const resp = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -380,12 +403,17 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
       signal: controller.signal,
     });
     const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content || '';
-    let jsonText = content;
-    if (jsonText.trim()[0] !== '[') {
-      const start = jsonText.indexOf('[');
-      const end = jsonText.lastIndexOf(']');
-      if (start >= 0 && end > start) jsonText = jsonText.slice(start, end + 1);
+    console.log("【智谱API完整返回】:", JSON.stringify(data));
+    const content = data?.choices?.[0]?.message?.content || "";
+    console.log("【智谱原生交卷内容】:", content);
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[0];
+    } else {
+      throw new Error("大模型返回内容中未找到 JSON 数组结构");
+    }
+    if (!jsonText || !jsonText.trim()) {
+      throw new Error("大模型返回的 JSON 内容为空");
     }
     const arr = JSON.parse(jsonText);
     if (!Array.isArray(arr)) throw new Error('LLM返回非数组');
@@ -407,17 +435,14 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         bid_end_date: null,
         award_date: null,
       };
-      // 金额与单价容错转换（处理字符串与“万元”单位）
+      // 金额容错转换：支持逗号分隔、含“万元”单位
       const parseMoney = (v: any): number|null => {
         if (typeof v === 'number') return v;
-        if (typeof v === 'string') {
-          const s = v.trim();
-          const wan = /万/.test(s);
-          const num = parseFloat(s.replace(/[^\d.]/g, ''));
-          if (isNaN(num)) return null;
-          return wan ? num * 10000 : num;
-        }
-        return null;
+        if (!v) return null;
+        const s = String(v).replace(/,/g, '').trim();
+        const wan = /万/.test(s);
+        const num = parseFloat(s.replace(/[^\d.]/g, ''));
+        return isNaN(num) ? null : (wan ? num * 10000 : num);
       };
       const parseNumber = (v: any): number|null => {
         if (typeof v === 'number') return v;
@@ -432,6 +457,9 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         if (v === null || v === undefined || v === '') return null;
         return [String(v)];
       };
+      const totalCandidate = t?.total_price ?? t?.totalPrice ?? t?.total ?? t?.price ?? t?.amount;
+      const unitCandidate = t?.unit_price ?? t?.unitPrice ?? t?.price_per_unit ?? t?.unit ?? t?.price;
+      const qtyCandidate = t?.quantity ?? t?.qty ?? t?.amount ?? t?.count;
       return Object.assign({}, baseTransaction, {
         url_id: urlId,
         user_id: userId || undefined,
@@ -439,9 +467,9 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         bidding_unit: t.bidding_unit ?? null,
         bidder_unit: t.bidder_unit ?? null,
         winning_unit: t.winning_unit ?? null,
-        total_price: parseMoney(t.total_price),
-        quantity: parseNumber(t.quantity),
-        unit_price: parseMoney(t.unit_price),
+        total_price: parseMoney(totalCandidate),
+        quantity: parseNumber(qtyCandidate),
+        unit_price: parseMoney(unitCandidate),
         detail_link: t.detail_link ?? detailUrl ?? null,
         is_channel: typeof t.is_channel === 'boolean' ? t.is_channel : null,
         cert_year: toYearArray(t.cert_year),
@@ -450,6 +478,60 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         award_date: t.award_date ?? null,
       });
     });
+  } catch (e) {
+    console.error("【LLM解析过程发生崩溃】:", (e as any)?.message || e);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function llmExtractLinks(structuredHtml: string, baseUrl: string): Promise<string[]> {
+  const apiKey = (Deno.env.get('OPENAI_API_KEY') || '').trim();
+  const resolveUrl = (href: string): string => {
+    try {
+      return new URL(href, baseUrl).toString();
+    } catch {
+      return href;
+    }
+  };
+  const dedupe = (arr: string[]) => Array.from(new Set(arr));
+  if (!apiKey) {
+    const hrefs = Array.from(structuredHtml.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis))
+      .map(m => resolveUrl(m[1]))
+      .filter(u => /ggzy\.zj\.gov\.cn/i.test(u));
+    return dedupe(hrefs);
+  }
+  const base = Deno.env.get('OPENAI_BASE_URL') || Deno.env.get('OPENAI_API_BASE') || Deno.env.get('DEEPSEEK_BASE_URL') || 'https://api.openai.com/v1';
+  const model = Deno.env.get('OPENAI_MODEL') || (base.includes('deepseek') ? 'deepseek-chat' : 'gpt-4o-mini');
+  const system = [
+    '任务：从给定的招标/公告HTML中提取与“绿证/绿色电力/GEC/交易/招标/中标/采购/证/绿电”等关键词高度相关的详情页链接（绝对URL）。',
+    '严格输出：仅返回JSON数组，元素是字符串URL；不得包含其他文本。'
+  ].join('\n');
+  const userContent = ['HTML：', structuredHtml, '', '仅输出 JSON 数组，数组元素为绝对URL字符串。'].join('\n');
+  const body = { model, temperature: 0.1, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const resp = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '[]';
+    const match = content.match(/\[[\s\S]*\]/);
+    const jsonText = match ? match[0] : '[]';
+    const arr = JSON.parse(jsonText);
+    if (!Array.isArray(arr)) return [];
+    const abs = arr.map((u: string) => resolveUrl(String(u))).filter((u: string) => /ggzy\.zj\.gov\.cn/i.test(u));
+    return dedupe(abs);
+  } catch {
+    const hrefs = Array.from(structuredHtml.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis))
+      .map(m => resolveUrl(m[1]))
+      .filter(u => /ggzy\.zj\.gov\.cn/i.test(u));
+    return dedupe(hrefs);
   } finally {
     clearTimeout(timer);
   }
@@ -463,20 +545,110 @@ async function scrapeWithRetry(
   maxRetries: number = 3,
   baseDelay: number = 1000
 ): Promise<{ html: string; success: boolean }> {
+  const isZhejiang = /ggzy\.zj\.gov\.cn/i.test(url);
+  const makeJinaUrls = (u: string): string[] => {
+    try {
+      const uObj = new URL(u);
+      const withoutScheme = `${uObj.host}${uObj.pathname}${uObj.search}${uObj.hash}`;
+      return [
+        `https://r.jina.ai/http://${withoutScheme}`,
+        `https://r.jina.ai/https://${withoutScheme}`,
+      ];
+    } catch {
+      return [
+        `https://r.jina.ai/http://${u.replace(/^https?:\/\//, '')}`,
+        `https://r.jina.ai/https://${u.replace(/^https?:\/\//, '')}`,
+      ];
+    }
+  };
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
+      let response: Response | null = null;
+      let bodyText: string | null = null;
+
+      if (isZhejiang) {
+        // 浙江域名强制走 Jina 代理（全球IP池），对冲单IP封禁
+        const candidates = makeJinaUrls(url);
+        for (const ju of candidates) {
+          response = await fetch(ju, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+              'Referer': 'https://ggzy.zj.gov.cn/',
+            },
+          });
+          console.log('【抓取状态(Jina)】', { url: ju, status: response.status });
+          if (response.ok) {
+            bodyText = await response.text();
+            console.log('【抓取片段(Jina)】', (bodyText || '').substring(0, 500));
+            // 如果内容疑似被拦截或过短，尝试直连高伪装模式
+            const blocked = /Access Denied|Checking your browser|403 Forbidden|Shield|WAF|captcha|Verification|验证|访问受限/i.test(bodyText || '');
+            if (!blocked && (bodyText || '').trim().length >= 150) {
+              break;
+            } else {
+              console.warn('【Jina内容疑似被拦截或过短，尝试直连高伪装】');
+              response = null;
+              bodyText = null;
+            }
+          }
+        }
+
+        // 直连高伪装模式（一次尝试）：携带完整Chrome头与模拟Cookie
+        if (!response) {
+          const headers: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': 'https://ggzy.zj.gov.cn/',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            // 简单的Cookie模拟（非敏感），用于绕过部分基础拦截
+            'Cookie': 'cookieconsent_status=dismiss; _ga=GA1.1.123456789.1700000000; _gid=GA1.1.987654321.1700000000',
+          };
+          const directResp = await fetch(url, { headers });
+          console.log('【抓取状态(直连高伪装)】', { url, status: directResp.status });
+          if (directResp.ok) {
+            const txt = await directResp.text();
+            console.log('【抓取片段(直连高伪装)】', txt.substring(0, 500));
+            // 若直连可用则用此结果
+            response = directResp;
+            bodyText = txt;
+          }
+        }
+      } else {
+        // 其他域名保持现有逻辑（加UA），南网逻辑不变
+        response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+          },
+        });
+        console.log('【抓取状态(直连)】', { url, status: response.status });
+      }
+
+      if (!response) {
+        throw new Error('抓取初始化失败（无可用响应）');
+      }
 
       if (!response.ok) {
         console.error('抓取返回非200', { url, status: response.status, statusText: response.statusText });
+        try {
+          const t = await response.text();
+          console.log('【抓取片段(非200)】', (t || '').substring(0, 500));
+        } catch (_) {}
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const bodyText = await response.text();
+      if (bodyText == null) {
+        bodyText = await response.text();
+      }
+      console.log('【抓取片段(最终)】', (bodyText || '').substring(0, 500));
       if (!bodyText || bodyText.trim().length === 0) {
         console.error('抓取返回空响应体', { url, status: response.status });
         throw new Error('Empty response body');
@@ -490,8 +662,10 @@ async function scrapeWithRetry(
         throw error;
       }
 
-      // 指数退避
-      const delay = baseDelay * Math.pow(2, attempt);
+      // 指数退避 + 抖动（2000ms ± 500ms），避免请求节律过于规律
+      const backoff = baseDelay * Math.pow(2, attempt);
+      const jitter = 2000 + Math.floor(Math.random() * 1000 - 500); // 1500ms~2500ms
+      const delay = Math.max(0, backoff + jitter);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -527,20 +701,60 @@ async function processIncrementalScrape(
     };
   }
 
-  const { html } = await scrapeWithRetry(url);
+  let lastHash: string | null = null;
+  try {
+    const { data: urlRow, error: readHashError } = await supabaseClient
+      .from('urls')
+      .select('last_content_hash')
+      .eq('id', safeUrlId)
+      .single();
+    if (!readHashError) {
+      lastHash = urlRow?.last_content_hash ?? null;
+    } else {
+      console.warn('读取 last_content_hash 失败:', readHashError.message || readHashError);
+    }
+  } catch (e) {
+    console.warn('读取 last_content_hash 异常:', (e as any)?.message || e);
+  }
+
+  const { html, success } = await scrapeWithRetry(url);
+  const isZhejiang = /ggzy\.zj\.gov\.cn/i.test(url);
+  const minLen = isZhejiang ? 150 : 300;
+  if (!success || !html) {
+    console.log("【抓取预览】无内容或失败，前500字:", (html || '').substring(0, 500));
+    throw new Error('抓取内容过短，疑似被拦截');
+  }
+  const blocked = /Access Denied|Checking your browser|403 Forbidden/i.test(html);
+  if (blocked) {
+    console.log("【抓取阻断提示】内容包含疑似拦截文案，前500字:", html.substring(0, 500));
+    throw new Error('抓取被目标站拦截，触发防护文案');
+  }
+  if (html.trim().length < minLen) {
+    console.log("【抓取预览】长度过短，前500字:", html.substring(0, 500));
+    throw new Error('抓取内容过短，疑似被拦截');
+  }
 
   let parsed: any[] = [];
   try {
     const structuredHtml = toPlainText(html);
+    const { updated, newHash } = hasPageUpdated(structuredHtml, lastHash);
+    if (!updated) {
+      return {
+        newRecords: [],
+        updatedRecords: [],
+        duplicateCount: 0,
+        totalRecords: 0,
+      };
+    }
     const llm = await llmExtractTransactions(structuredHtml, safeUrlId, safeUserId || '', url);
     if (llm && llm.length > 0) {
       parsed = llm;
     } else {
-      parsed = parseHtmlData(html, safeUrlId, safeUserId || '', url);
+      throw new Error('LLM 未返回有效数据，拒绝回退旧规则');
     }
   } catch (e) {
-    console.error('LLM解析失败，回退本地规则:', e?.message || e);
-    parsed = parseHtmlData(html, safeUrlId, safeUserId || '', url);
+    console.error('LLM解析失败，已阻止回退旧规则:', e?.message || e);
+    throw e;
   }
   const allTransactions = parsed.map((t: any) => {
     const base: any = { ...t, url_id: safeUrlId };
@@ -565,6 +779,7 @@ async function processIncrementalScrape(
     };
   }
 
+  console.log("【入库终极检查】准备存入DB的第一个对象:", JSON.stringify(allTransactions[0]));
   const transactionsWithHash = await Promise.all(
     allTransactions.map(async (transaction) => ({
       ...transaction,
@@ -632,6 +847,21 @@ async function processIncrementalScrape(
     }
   }
 
+  // 更新 last_content_hash（失败不影响流程）
+  try {
+    const structuredHtml = toPlainText(html);
+    const { newHash } = hasPageUpdated(structuredHtml, lastHash);
+    const { error: updateHashError } = await supabaseClient
+      .from('urls')
+      .update({ last_content_hash: newHash })
+      .eq('id', safeUrlId);
+    if (updateHashError) {
+      console.warn('更新 last_content_hash 失败:', updateHashError.message || updateHashError);
+    }
+  } catch (e) {
+    console.warn('更新 last_content_hash 异常:', (e as any)?.message || e);
+  }
+
   return {
     newRecords,
     updatedRecords: [],
@@ -649,7 +879,12 @@ async function logScrapingResult(
   urlId: string,
   result: ScrapingResult
 ): Promise<void> {
-  console.log("执行DB操作前，当前 userId 的值是:", userId && userId !== 'N/A' ? userId : null);
+  // 若 userId 缺失，安全跳过写入，避免违反 NOT NULL 约束
+  if (!userId || userId === 'N/A') {
+    console.warn('跳过 scraping_logs 写入：缺少有效 userId');
+    return;
+  }
+  console.log("执行DB操作前，当前 userId 的值是:", userId);
   const payload: any = {
     url_id: urlId,
     status: result.status,
@@ -661,15 +896,12 @@ async function logScrapingResult(
     duration_ms: result.durationMs,
     error_details: result.error ? { message: result.error } : null,
   };
-  if (userId && userId !== 'N/A') {
-    payload.user_id = userId;
-  }
+  payload.user_id = userId;
   const { error } = await supabaseClient.from('scraping_logs').insert(payload);
 
   if (error) {
     console.error('记录抓取日志失败:', error);
   }
-}
 
 /**
  * 更新URL表中的抓取统计
@@ -681,18 +913,33 @@ async function updateUrlStats(
   userId?: string | null
 ): Promise<void> {
   console.log("执行DB操作前，当前 userId 的值是:", userId ?? null);
+  // 读取当前统计，确保以“简单整数”更新，避免把响应对象赋值到字段
+  let currentScrapeCount = 0;
+  let currentNewRecordsCount = 0;
+  try {
+    const { data: urlRow, error: readErr } = await supabaseClient
+      .from('urls')
+      .select('total_scrape_count,total_new_records_count')
+      .eq('id', urlId)
+      .single();
+    if (!readErr && urlRow) {
+      currentScrapeCount = urlRow.total_scrape_count ?? 0;
+      currentNewRecordsCount = urlRow.total_new_records_count ?? 0;
+    }
+  } catch (e) {
+    console.warn('读取 URL 统计失败，使用0作为初始值:', (e as any)?.message || e);
+  }
+
   const updates: any = {
     last_scraped_at: new Date().toISOString(),
     last_scrape_status: result.status,
-    total_scrape_count: supabaseClient.rpc('increment', { x: 1 }),
+    total_scrape_count: currentScrapeCount + 1,
   };
 
   if (result.status === 'error') {
     updates.last_error_message = result.error;
   } else {
-    updates.total_new_records_count = supabaseClient.rpc('increment', {
-      x: result.newRecordsCount
-    });
+    updates.total_new_records_count = currentNewRecordsCount + (result.newRecordsCount || 0);
     updates.last_error_message = null;
   }
 
@@ -708,12 +955,26 @@ async function updateUrlStats(
 
 // ==================== 主处理逻辑 ====================
 
-Deno.serve(async (req) => {
+async function handleRequest(req: Request): Promise<Response> {
   console.log("【探针版本】包含完整日志打印 - 20260226_02_FORCE_REFRESH");
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  // 极简调试路径：通过环境变量或查询参数启动
+  try {
+    const helloOnly = (Deno.env.get('HELLO_ONLY') || '').trim() === '1';
+    const urlObj = new URL(req.url);
+    const helloParam = urlObj.searchParams.get('mode') === 'min' || urlObj.searchParams.get('hello') === '1';
+    if (helloOnly || helloParam) {
+      const responsePayload = { success: true, message: 'Hello World' };
+      return new Response(JSON.stringify(responsePayload), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
+  } catch {}
 
   // 授权校验 (灵活匹配新旧钥匙)
   const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
@@ -840,13 +1101,44 @@ Deno.serve(async (req) => {
         try {
           console.log(`开始抓取: ${urlData.url}`);
 
-          // 执行增量抓取
-          const scrapeResult = await processIncrementalScrape(
-            supabaseClient,
-            urlData.id,
-            targetUserId,
-            urlData.url
-          );
+          let scrapeResult;
+          if (/ggzy\.zj\.gov\.cn/i.test(urlData.url)) {
+            const { html, success } = await scrapeWithRetry(urlData.url);
+            if (!success || !html || html.trim().length < 300) {
+              throw new Error('抓取内容过短，疑似被拦截');
+            }
+            const structuredHtml = toPlainText(html);
+            const links = await llmExtractLinks(structuredHtml, urlData.url);
+            const uniqueLinks = Array.from(new Set(links));
+            console.log(`从浙江平台提取到 ${uniqueLinks.length} 个候选链接`);
+            let totalNew: any[] = [];
+            let duplicate = 0;
+            let total = 0;
+            for (const link of uniqueLinks) {
+              try {
+                const r = await processIncrementalScrape(supabaseClient, urlData.id, targetUserId, link);
+                totalNew = totalNew.concat(r.newRecords || []);
+                duplicate += r.duplicateCount || 0;
+                total += r.totalRecords || 0;
+              } catch (e) {
+                console.error('处理详情链接失败:', link, (e as any)?.message || e);
+              }
+            }
+            scrapeResult = {
+              newRecords: totalNew,
+              updatedRecords: [],
+              duplicateCount: duplicate,
+              totalRecords: total,
+            };
+          } else {
+            const r = await processIncrementalScrape(
+              supabaseClient,
+              urlData.id,
+              targetUserId,
+              urlData.url
+            );
+            scrapeResult = r;
+          }
 
           const result: ScrapingResult = {
             urlId: urlData.id,
@@ -940,33 +1232,31 @@ Deno.serve(async (req) => {
     const errorCount = results.filter(r => r.status === 'error').length;
     const totalNewRecords = results.reduce((sum, r) => sum + r.newRecordsCount, 0);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `抓取完成: ${successCount} 成功, ${errorCount} 失败, 共 ${totalNewRecords} 条新数据`,
-        results,
-        summary: {
-          totalDuration,
-          successCount,
-          errorCount,
-          totalNewRecords,
-        },
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    // ... 确保这是最后一个 return
+    const responsePayload = {
+      success: true,
+      message: `抓取完成: ${successCount} 成功, ${errorCount} 失败, 共 ${totalNewRecords} 条新数据`,
+      results,
+      summary: {
+        totalDuration,
+        successCount,
+        errorCount,
+        totalNewRecords,
+      },
+    };
+    return new Response(JSON.stringify(responsePayload), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+    });
   } catch (error) {
-    console.error('自动抓取失败:', error);
-    return new Response(
-      JSON.stringify({
-        error: '自动抓取失败',
-        details: error.message
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    console.error("【全局崩溃日志】:", error.message);
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+    });
   }
+}
+
+Deno.serve(async (req) => { 
+  return handleRequest(req);
 });

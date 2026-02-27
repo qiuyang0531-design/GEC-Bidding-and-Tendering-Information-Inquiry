@@ -240,6 +240,7 @@ Deno.serve(async (req) => {
 
     console.log(`Extracted ${transactions.length} transactions`);
 
+    console.log("【入库终极检查】准备存入DB的第一个对象:", JSON.stringify(transactions[0]));
     // 为所有交易记录生成哈希
     const transactionsWithHash = await Promise.all(
       transactions.map(async (transaction) => ({
@@ -384,13 +385,15 @@ async function generateDataHash(transaction: any): Promise<string> {
 }
 
 function toPlainText(html: string): string {
-  // 保留结构化标签，仅去除噪声标签，将结构化HTML直接交给 LLM
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-    .replace(/<img[\s\S]*?>/gi, '')
-    .replace(/<video[\s\S]*?<\/video>/gi, '');
+  if (!html) return "";
+  // 1. 暴力剔除 script/style 等整块代码区
+  let text = html.replace(/<(script|style|svg|img|video)[^>]*>[\s\S]*?<\/\1>/gi, '');
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  // 2. 终极卸妆：强制把所有带属性的标签（如 <td style="mso-...">）洗成绝对纯净标签（如 <td>）
+  text = text.replace(/<([a-zA-Z0-9]+)\b[^>]*>/g, '<$1>');
+  // 3. 压缩空白，为 LLM 节省注意力
+  text = text.replace(/\s{2,}/g, ' ').replace(/\n+/g, '\n');
+  return text.trim();
 }
 
 async function llmExtractTransactions(rawText: string, urlId: string, userId: string, detailUrl: string): Promise<any[]> {
@@ -435,10 +438,13 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
     '全局约束：尽最大努力填充字段，除非通篇毫无线索，否则不要轻易填null；任何情况下都不得省略字段 key。'
   ].join('\n');
   const userContent = ['HTML：', rawText, '', '仅输出JSON数组，不要包含多余文本。'].join('\n');
-  const body = { model, temperature: 0, response_format: { type: "json_object" }, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
+  const body = { model, temperature: 0.1, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    let jsonText = "";
+    const text = rawText;
+    console.log("【强力探针】喂给LLM的纯净HTML中是否包含16120:", text.includes("16120"));
     const resp = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -446,12 +452,17 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
       signal: controller.signal,
     });
     const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content || '';
-    let jsonText = content;
-    if (jsonText.trim()[0] !== '[') {
-      const start = jsonText.indexOf('[');
-      const end = jsonText.lastIndexOf(']');
-      if (start >= 0 && end > start) jsonText = jsonText.slice(start, end + 1);
+    console.log("【智谱API完整返回】:", JSON.stringify(data));
+    const content = data?.choices?.[0]?.message?.content || "";
+    console.log("【智谱原生交卷内容】:", content);
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[0];
+    } else {
+      throw new Error("大模型返回内容中未找到 JSON 数组结构");
+    }
+    if (!jsonText || !jsonText.trim()) {
+      throw new Error("大模型返回的 JSON 内容为空");
     }
     const arr = JSON.parse(jsonText);
     if (!Array.isArray(arr)) throw new Error('LLM返回非数组');
@@ -475,14 +486,11 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
       };
       const parseMoney = (v: any): number|null => {
         if (typeof v === 'number') return v;
-        if (typeof v === 'string') {
-          const s = v.trim();
-          const wan = /万/.test(s);
-          const num = parseFloat(s.replace(/[^\d.]/g, ''));
-          if (isNaN(num)) return null;
-          return wan ? num * 10000 : num;
-        }
-        return null;
+        if (!v) return null;
+        const s = String(v).replace(/,/g, '').trim();
+        const wan = /万/.test(s);
+        const num = parseFloat(s.replace(/[^\d.]/g, ''));
+        return isNaN(num) ? null : (wan ? num * 10000 : num);
       };
       const parseNumber = (v: any): number|null => {
         if (typeof v === 'number') return v;
@@ -497,6 +505,9 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         if (v === null || v === undefined || v === '') return null;
         return [String(v)];
       };
+      const totalCandidate = t?.total_price ?? t?.totalPrice ?? t?.total ?? t?.price ?? t?.amount;
+      const unitCandidate = t?.unit_price ?? t?.unitPrice ?? t?.price_per_unit ?? t?.unit ?? t?.price;
+      const qtyCandidate = t?.quantity ?? t?.qty ?? t?.amount ?? t?.count;
       return Object.assign({}, baseTransaction, {
         url_id: urlId,
         user_id: userId || undefined,
@@ -504,9 +515,9 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         bidding_unit: t.bidding_unit ?? null,
         bidder_unit: t.bidder_unit ?? null,
         winning_unit: t.winning_unit ?? null,
-        total_price: parseMoney(t.total_price),
-        quantity: parseNumber(t.quantity),
-        unit_price: parseMoney(t.unit_price),
+        total_price: parseMoney(totalCandidate),
+        quantity: parseNumber(qtyCandidate),
+        unit_price: parseMoney(unitCandidate),
         detail_link: t.detail_link ?? detailUrl ?? null,
         is_channel: typeof t.is_channel === 'boolean' ? t.is_channel : null,
         cert_year: toYearArray(t.cert_year),
@@ -515,6 +526,9 @@ async function llmExtractTransactions(rawText: string, urlId: string, userId: st
         award_date: t.award_date ?? null,
       });
     });
+  } catch (e) {
+    console.error("【LLM解析过程发生崩溃】:", (e as any)?.message || e);
+    throw e;
   } finally {
     clearTimeout(timer);
   }
