@@ -38,6 +38,9 @@ serve(async (req) => {
   }
 
   try {
+    const startTime = Date.now();
+    const MAX_BATCH = Number.parseInt(Deno.env.get('AUTO_SCRAPE_BATCH_LIMIT') || '3') || 3;
+    const TIME_BUDGET_MS = Number.parseInt(Deno.env.get('AUTO_SCRAPE_TIME_BUDGET_MS') || '50000') || 50000;
     const { urlId, url, maxPages = 10 } = await req.json();
 
     if (!url) {
@@ -76,10 +79,16 @@ serve(async (req) => {
     const links: string[] = [];
     let pageNum = 1;
     let hasNextPage = true;
+    const maxPagesCapped = Math.min(maxPages, Math.max(1, MAX_BATCH));
 
     // 循环翻页抓取
-    while (hasNextPage && pageNum <= maxPages) {
-      console.log(`📖 正在抓取第 ${pageNum} 页...`);
+    while (hasNextPage && pageNum <= maxPagesCapped) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= TIME_BUDGET_MS) {
+        console.warn(`【时间预警】列表抓取已运行 ${(elapsed / 1000).toFixed(1)} 秒，提前结束翻页`);
+        break;
+      }
+      console.log(`📖 正在抓取第 ${pageNum}/${maxPagesCapped} 页...`);
 
       // 提取当前页的所有详情页链接
       const pageLinks = await page.evaluate(() => {
