@@ -311,7 +311,7 @@ async function handleRequest(req: Request): Promise<Response> {
           let totalNew: any[] = [];
           let duplicate = 0;
           let total = 0;
-          const limitedLinks = uniqueLinks.slice(0, 1);
+          const limitedLinks = uniqueLinks.slice(0, 10);
           for (const link of limitedLinks) {
             console.log('【发现详情链接】:', link);
             try {
@@ -341,7 +341,7 @@ async function handleRequest(req: Request): Promise<Response> {
               }
               if (!useHtml || useHtml.trim().length === 0) continue;
               const structuredHtml = Parsers.toPlainText(useHtml);
-              const coreOk = /(成交|结果|单价|成交量)/.test(structuredHtml);
+              const coreOk = /(成交|结果|单价|成交量|招标|采购|询价|比选)/.test(structuredHtml);
               const nonTarget = /(更正公告|废标公告)/.test(structuredHtml);
               if (!coreOk || nonTarget) {
                 console.warn('【LLM前置过滤】非目标类型或缺少核心关键词，跳过大模型解析');
@@ -414,7 +414,7 @@ async function handleRequest(req: Request): Promise<Response> {
               results.push(result);
               continue;
             }
-            const limitedLinks = uniqueLinks.slice(0, 1);
+            const limitedLinks = uniqueLinks.slice(0, 10);
             let totalNew: any[] = [];
             let duplicate = 0;
             let total = 0;
@@ -424,7 +424,7 @@ async function handleRequest(req: Request): Promise<Response> {
                 const first = await Scraper.scrapeWithRetry(link, 3, 1000, { forceScraperRender: false });
                 if (!first.success || !first.html || first.html.trim().length === 0) continue;
                 const structuredHtml = Parsers.toPlainText(first.html);
-                const coreOk = /(成交|结果|单价|成交量)/.test(structuredHtml);
+                const coreOk = /(成交|结果|单价|成交量|招标|采购|询价|比选)/.test(structuredHtml);
                 const nonTarget = /(更正公告|废标公告)/.test(structuredHtml);
                 if (!coreOk || nonTarget) {
                   console.warn('【LLM前置过滤】非目标类型或缺少核心关键词，跳过大模型解析');
